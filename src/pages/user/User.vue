@@ -47,14 +47,10 @@ function mapUserPost(item: any): PostItem {
     name_show: item?.name_show ?? item?.user_name ?? '',
     user_portrait: item?.user_portrait ?? '',
     title: item?.title ?? '',
-    content: content.flatMap((block: any) =>
-      Array.isArray(block?.post_content)
-        ? block.post_content.map((entry: any) => ({
-            postContent: [entry],
-            createTime: Number(block?.create_time ?? 0),
-          }))
-        : []
-    ),
+    content: content.map((block: any) => ({
+      postContent: Array.isArray(block?.post_content) ? block.post_content : [],
+      createTime: Number(block?.create_time ?? 0),
+    })),
   };
 }
 
