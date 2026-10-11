@@ -11,7 +11,7 @@ import { connectionMessage } from '@/utils/settings-policy';
 import { invoke } from '@tauri-apps/api/core';
 import { openUrl, openPath } from '@tauri-apps/plugin-opener';
 import { appLogDir } from '@tauri-apps/api/path';
-import { WALLPAPER_EFFECT_OPTIONS } from '@/stores/settings';
+import { WALLPAPER_EFFECT_OPTIONS, GLOBAL_FONT_OPTIONS } from '@/stores/settings';
 
 // Props 定义
 interface Props {
@@ -46,6 +46,24 @@ const wallpaperEffectOptions = isMacOS
     .filter(({ value }) => value !== 'mica')
     .map((option) => option.value === 'acrylic' ? { ...option, label: '透明' } : option)
   : /Windows/i.test(navigator.userAgent) ? WALLPAPER_EFFECT_OPTIONS : WALLPAPER_EFFECT_OPTIONS.filter(({ value }) => value === 'image' || value === 'solid');
+
+const systemFonts = ref<Array<{ label: string; value: string }>>(GLOBAL_FONT_OPTIONS);
+const systemFontsLoaded = ref(false);
+const loadSystemFonts = async (): Promise<void> => {
+  if (systemFontsLoaded.value) return;
+  systemFontsLoaded.value = true;
+  try {
+    const families: string[] = await invoke('list_system_fonts');
+    const options = [{ label: '默认', value: '' }, ...families.filter(Boolean).map(name => ({ label: name, value: name }))];
+    const current = settingsStore.globalFont;
+    if (current && !options.some(option => option.value === current)) {
+      options.push({ label: `${current}（未安装）`, value: current });
+    }
+    systemFonts.value = options;
+  } catch (error) {
+    console.error('枚举系统字体失败:', error);
+  }
+};
 
 // State 定义
 const user: Ref<User[]> = ref([]);
@@ -135,6 +153,15 @@ const displaySettings: ComputedRef<SettingItem[]> = computed(() => [
       { label: '深色', value: 'dark' },
     ],
   },
+  {
+    id: 'global_font',
+    icon: 'text_fields',
+    title: '全局字体',
+    type: 'select',
+    desc: '选择应用界面使用的字体',
+    value: settingsStore.globalFont,
+    options: systemFonts.value,
+  },
   { id: 'accent_mode', icon: 'color_lens', title: '主题色来源', type: 'select', desc: '使用当前吧主题色、壁纸取色或固定自定义颜色', value: settingsStore.accentMode, options: [{ label: '吧主题色', value: 'forum' }, { label: '壁纸取色', value: 'wallpaper' }, { label: '自定义主题色', value: 'custom' }] },
   ...(settingsStore.accentMode === 'custom' ? [{ id: 'custom_accent_color', icon: 'colorize', title: '自定义主题色', type: 'color' as const, desc: '全局使用此颜色', value: settingsStore.customAccentColor }] : []),
   { id: 'wallpaper_accent', icon: 'contrast', title: '背景亮度', type: 'slider', desc: '亮度越高底色越淡 (0-100)', value: settingsStore.wallpaperAccent ?? 0, min: 0, max: 100 },
@@ -212,6 +239,7 @@ const loadUsers = async (): Promise<void> => {
 // 生命周期钩子
 onMounted(async (): Promise<void> => {
   await loadUsers();
+  void loadSystemFonts();
   updateTabMeta?.({ key: props.key_, title: "设置", icon: "/assets/settings.svg", icon_invert: true });
 });
 
@@ -246,7 +274,7 @@ const updateSetting = (id: string, value: string | boolean | number): void => {
     return;
   }
   if (id === 'archive_online_fallback') { settingsStore.archiveOnlineFallback = Boolean(value); return; }
-  if (['show_user_id', 'only_author', 'no_image', 'theme', 'accent_mode', 'custom_accent_color', 'wallpaper_path', 'wallpaper_accent', 'wallpaper_blur', 'wallpaper_effect', 'wallpaper_solid_color'].includes(id)) {
+  if (['show_user_id', 'only_author', 'no_image', 'theme', 'global_font', 'accent_mode', 'custom_accent_color', 'wallpaper_path', 'wallpaper_accent', 'wallpaper_blur', 'wallpaper_effect', 'wallpaper_solid_color'].includes(id)) {
     settingsStore.updateDisplaySetting(id, value);
     return;
   }
@@ -344,12 +372,12 @@ const onScroll = (_target: HTMLElement): void => {
               <div v-if="currentUser" style="display: flex; gap: 10px; text-align: left; width: 100%;">
                 <RemoteImage kind="avatars" class="avatar" :src="currentUser.avatar || ''"
                   referrerpolicy="no-referrer" />
-                <div style="display: flex; flex-direction: column; flex: 1; min-width: 0;">
+                <div style="display: flex; flex-direction: column; flex: 1; min-width: 0; margin-top: 5px;">
                   <div
                     style="font-weight: bold; color: rgb(var(--text-color)); font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
                     {{ currentUser.user_name || currentUser.username }}
                   </div>
-                  <div style="text-align: left; font-size: 13px; color: rgba(var(--text-color), 0.5)">
+                  <div style="text-align: left; font-size: 13px; color: rgba(var(--text-color), 0.5); ">
                     轻按进入账号管理
                   </div>
                 </div>

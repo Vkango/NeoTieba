@@ -27,6 +27,34 @@ export const WALLPAPER_EFFECT_OPTIONS: Array<{ label: string; value: WallpaperEf
   { label: '纯色', value: 'solid' },
 ];
 
+export const GLOBAL_FONT_OPTIONS: Array<{ label: string; value: string }> = [
+  { label: '默认', value: '' },
+  { label: '系统 UI 字体', value: 'system-ui' },
+  { label: '微软雅黑', value: 'Microsoft YaHei' },
+  { label: '苹方', value: 'PingFang SC' },
+  { label: '宋体', value: 'SimSun' },
+  { label: '黑体', value: 'SimHei' },
+  { label: '楷体', value: 'KaiTi' },
+  { label: '仿宋', value: 'FangSong' },
+  { label: '等线', value: 'DengXian' },
+];
+
+const DEFAULT_FONT_STACK = "-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif";
+
+function cssFontName(name: string): string {
+    return /^[-a-zA-Z0-9]+$/.test(name) ? name : `'${name.replace(/['\\]/g, '').trim()}'`;
+}
+
+export function applyGlobalFont(font: string): void {
+    const root = document.documentElement;
+    const trimmed = (font || '').trim();
+    if (!trimmed) {
+        root.style.removeProperty('font-family');
+        return;
+    }
+    root.style.fontFamily = `${cssFontName(trimmed)}, ${DEFAULT_FONT_STACK}`;
+}
+
 /** 预先编辑的帖子保存默认选项（保存对话框每次打开时以此为初值）。 */
 export interface ThreadSaveDefaults {
     onlyAuthor: boolean;
@@ -96,6 +124,7 @@ export const useSettingsStore = defineStore('settings', () => {
     const mediaPolicy = computed(() => normalizeMediaBlocks(mediaBlocks.value));
     function isMediaBlocked(kind: MediaKind): boolean { return mediaBlocked(noImage.value, mediaPolicy.value, kind); }
     const theme = ref<'auto' | 'light' | 'dark'>('auto');
+    const globalFont = ref('');
     const accentMode = ref<AccentMode>('forum');
     const customAccentColor = ref('#3b82f6');
     const wallpaperPath = ref<string>('');
@@ -123,6 +152,9 @@ export const useSettingsStore = defineStore('settings', () => {
                 break;
             case 'theme':
                 theme.value = value;
+                break;
+            case 'global_font':
+                globalFont.value = String(value ?? '').trim();
                 break;
             case 'accent_mode':
                 accentMode.value = value as AccentMode;
@@ -300,6 +332,10 @@ export const useSettingsStore = defineStore('settings', () => {
         applyTheme(value);
     }, { flush: 'sync' });
 
+    watch(globalFont, (value) => {
+        applyGlobalFont(value);
+    }, { flush: 'sync' });
+
     watch(wallpaperEffect, (value) => {
         if (isMacOS && value === 'mica') {
             wallpaperEffect.value = 'image';
@@ -329,6 +365,7 @@ export const useSettingsStore = defineStore('settings', () => {
         onlyAuthor,
         noImage, mediaBlocks, mediaPolicy, isMediaBlocked, settingsError, wallpaperBusy,
         theme,
+        globalFont,
         accentMode, customAccentColor,
         // 壁纸设置
         wallpaperPath,
@@ -367,13 +404,14 @@ export const useSettingsStore = defineStore('settings', () => {
             store.mediaBlocks = normalizeMediaBlocks(store.mediaBlocks);
             store.threadSaveDefaults = normalizeThreadSaveDefaults(store.threadSaveDefaults);
             store.applyTheme(store.theme);
+            applyGlobalFont(store.globalFont);
             if (store.accentMode === 'custom') setGlobalAccentPair(accentPairFromSeed(store.customAccentColor));
             setAccentSource(store.accentMode);
             void store.syncWallpaperAccent();
         },
 
         pick: [
-            'showUserId', 'onlyAuthor', 'noImage', 'mediaBlocks', 'theme', 'accentMode', 'customAccentColor',
+            'showUserId', 'onlyAuthor', 'noImage', 'mediaBlocks', 'theme', 'globalFont', 'accentMode', 'customAccentColor',
             'wallpaperPath', 'wallpaperAccent', 'wallpaperBlur', 'wallpaperEffect', 'wallpaperSolidColor',
             'useProxy', 'proxyUrl', 'enableAutoSign', 'blockList',
             'threadSaveDefaults', 'archiveOnlineFallback',

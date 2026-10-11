@@ -271,6 +271,13 @@ fn set_window_dark_mode<R: Runtime>(
     Ok(())
 }
 
+#[tauri::command]
+fn list_system_fonts() -> Result<Vec<String>, String> {
+    font_kit::source::SystemSource::new()
+        .all_families()
+        .map_err(|error| format!("枚举系统字体失败: {error}"))
+}
+
 #[cfg(target_os = "windows")]
 fn apply_effect<R: Runtime>(
     window: &tauri::WebviewWindow<R>,
@@ -411,6 +418,7 @@ fn main() {
             toggle_devtools,
             set_wallpaper_effect,
             set_window_dark_mode,
+            list_system_fonts,
             http_request_command,
             test_connection,
             read_file,

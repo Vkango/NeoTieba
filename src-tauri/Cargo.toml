@@ -44,6 +44,7 @@ tauri-plugin-clipboard-x = "2.0.1"
 tar = "0.4"
 memmap2 = "0.9"
 sha1 = "0.10"
+font-kit = "0.14"
 
 [dev-dependencies]
 tauri = { version = "2", features = ["test"] }
