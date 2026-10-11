@@ -89,7 +89,7 @@ const onScroll = (target: HTMLElement) => {
           @click="searchResult = []; searchType = 1; currentPage = 1; handleEnter(true)">主题帖
         </RippleButton>
       </div>
-      <input placeholder="输入关键词后按下回车键进行搜索…" @keyup.enter="handleEnter(false)" v-model="searchContent">
+      <input data-kb-search placeholder="输入关键词后按下回车键进行搜索…" @keyup.enter="handleEnter(false)" v-model="searchContent">
       <TransitionGroup name="fade1">
         <div class="result" v-if="searchType == 0 && Array.isArray(searchResult)">
           <Thread :tid="item.tid" :uid="item.user.uid" @openUser="emit('openUser', item.user.uid)" @openThread="emit('openThread', item.tid)"

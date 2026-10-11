@@ -56,7 +56,7 @@ onMounted(() => {
       <PageState v-if="loadError && !isLoading" :error="loadError" :retry="loadFollowedForums" />
       <transition name="fade1">
         <div class="list-view" v-if="!isLoading && !loadError">
-          <button class="bar-button" v-for="item in naviListItem" :key="item.forum_id || item.forum_name"
+          <button class="bar-button" data-kb-item v-for="item in naviListItem" :key="item.forum_id || item.forum_name"
             @click="emit('openBar', item.forum_name)">
             <RemoteImage class="avatar" :src="item.avatar" />
             <div style="margin-left: 5px;">

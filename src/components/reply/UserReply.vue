@@ -1,5 +1,5 @@
 <template>
-  <div class="thread" @click="onThreadClicked">
+  <div class="thread" data-kb-item @click="onThreadClicked">
     <div class="user-info">
       <div class="avatar"><RemoteImage kind="avatars" class="avatar"
           :src="'https://gss0.bdstatic.com/6LZ1dD3d1sgCo2Kml5_Y_D3/sys/portrait/item/' + avatar" /></div>

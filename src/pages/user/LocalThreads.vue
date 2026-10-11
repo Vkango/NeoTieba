@@ -196,7 +196,7 @@ onBeforeUnmount(() => {
       <div class="library-header">
         <div class="library-title">归档</div>
         <input v-model="searchInput" class="library-search" type="text" placeholder="搜索标题 / 吧名 / 帖子ID"
-          autocomplete="off" />
+          data-kb-search autocomplete="off" />
       </div>
 
       <transition name="fade1">

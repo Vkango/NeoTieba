@@ -1,5 +1,5 @@
 <template>
-  <div class="thread" @click.stop>
+  <div class="thread" data-kb-item @click.stop>
     <div class="user-info" @click="openUser(props.uid as string | number)">
       <div class="avatar">
         <RemoteImage kind="avatars" class="avatar"

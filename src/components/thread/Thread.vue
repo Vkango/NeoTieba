@@ -1,5 +1,5 @@
 <template>
-  <div class="thread" @click="emit('openThread')">
+  <div class="thread" data-kb-item @click="emit('openThread')">
     <div class="user-info" @click.stop @click="openUser">
       <div class="avatar">
         <RemoteImage kind="avatars" class="avatar"

@@ -510,6 +510,31 @@ button:active {
     bottom: 20px;
 }
 
+/* 键盘控制：光标模式高亮（data-kb-item 标记的列表条目） */
+[data-kb-item].kb-cursor {
+    outline: 2px solid rgba(var(--primary-color), 0.75);
+    outline-offset: -2px;
+    background-color: rgba(var(--text-color), 0.07);
+}
+
+/* 键位提示按键样式（帮助浮层 / 设置页共用） */
+kbd {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 22px;
+    height: 22px;
+    padding: 0 6px;
+    box-sizing: border-box;
+    font-family: inherit;
+    font-size: 12px;
+    color: rgb(var(--text-color));
+    background-color: rgba(var(--text-color), 0.07);
+    border: 1px solid rgba(var(--text-color), 0.18);
+    border-bottom-width: 2px;
+    border-radius: 4px;
+}
+
 /* Leave room for the native macOS traffic lights in the overlay titlebar. */
 html.macos #container .navi {
     top: 28px;

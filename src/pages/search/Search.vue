@@ -78,14 +78,14 @@ const onScroll = () => {
           @click="searchResult = undefined; searchType = 2; handleEnter(true)">搜人
         </RippleButton>
       </div>
-      <input placeholder="输入关键词后按下回车键进行搜索…" @keyup.enter="handleEnter(false)" v-model="searchContent">
+      <input data-kb-search placeholder="输入关键词后按下回车键进行搜索…" @keyup.enter="handleEnter(false)" v-model="searchContent">
       <TransitionGroup name="fade1">
         <div class="result" v-if="searchType == 0 && searchResult">
           <div v-if="searchResult?.exactMatch?.avatar != undefined">
             <Tag>最佳匹配</Tag>
             <div
               style="margin-top: 10px; display: grid; gap: 10px 10px; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); align-items: start;">
-              <button class="bar-button" @click="emit('openBar', searchResult.exactMatch.forum_name)">
+              <button class="bar-button" data-kb-item @click="emit('openBar', searchResult.exactMatch.forum_name)">
                 <RemoteImage class="avatar" :src="searchResult.exactMatch.avatar" />
                 <div style="margin-left: 5px;">
                   <div class="bar-name">{{ searchResult.exactMatch.forum_name }} </div>
@@ -99,7 +99,7 @@ const onScroll = () => {
             <Tag>相关匹配</Tag>
             <div
               style="margin-top: 10px; display: grid; gap: 10px 10px; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); align-items: start;">
-              <button class="bar-button" v-for="item in searchResult?.fuzzyMatch"
+              <button class="bar-button" data-kb-item v-for="item in searchResult?.fuzzyMatch"
                 @click="emit('openBar', item.forum_name)">
                 <RemoteImage class="avatar" :src="item.avatar" />
                 <div style="margin-left: 5px;">

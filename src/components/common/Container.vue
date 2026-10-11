@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onActivated, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useTabStore } from '@/stores/tabs';
+import { registerScroller, unregisterScroller, type ScrollerHandle } from '@/core/hotkeys';
 
 const props = defineProps<{
   scrollKey?: string;
@@ -103,10 +104,6 @@ onActivated(() => {
   restoreScrollPosition();
 });
 
-onMounted(() => {
-  restoreScrollPosition();
-});
-
 watch(
   () => [tabStore.activeKey, storageKey.value] as const,
   () => {
@@ -114,10 +111,6 @@ watch(
   },
   { flush: 'post' }
 );
-
-onBeforeUnmount(() => {
-  clearRestoreTimer();
-});
 
 function scrollToTop() {
   clearRestoreTimer();
@@ -138,6 +131,26 @@ function scrollToElement(element: HTMLElement, offset = 12) {
 }
 
 defineExpose({ scrollToTop, scrollToElement, getScrollElement: () => scrollContainer.value });
+
+// 注册到全局键盘控制系统，key 与 tabStore.activeKey 对齐；
+// 仅页面级 Container（带 tabKey / scrollKey）注册，弹窗内容器不参与。
+const scrollerHandle: ScrollerHandle = {
+  get el(): HTMLElement {
+    return scrollContainer.value as HTMLElement;
+  },
+  scrollToTop,
+  scrollToElement,
+};
+
+onMounted(() => {
+  if (identityKey.value) registerScroller(identityKey.value, scrollerHandle);
+  restoreScrollPosition();
+});
+
+onBeforeUnmount(() => {
+  if (identityKey.value) unregisterScroller(identityKey.value, scrollerHandle);
+  clearRestoreTimer();
+});
 </script>
 
 <template>

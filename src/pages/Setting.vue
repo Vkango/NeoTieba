@@ -83,6 +83,10 @@ const generalSettingItems = ref<MenuSettingItem[]>([{
   icon: '/assets/inbox.svg',
   id: 8,
 }, {
+  title: '快捷键',
+  icon: '/assets/list.svg',
+  id: 9,
+}, {
   title: '关于',
   icon: '/assets/info.svg',
   id: 2,
@@ -274,6 +278,7 @@ const updateSetting = (id: string, value: string | boolean | number): void => {
     return;
   }
   if (id === 'archive_online_fallback') { settingsStore.archiveOnlineFallback = Boolean(value); return; }
+  if (id === 'keyboard_enabled') { settingsStore.updateDisplaySetting(id, value); return; }
   if (['show_user_id', 'only_author', 'no_image', 'theme', 'global_font', 'accent_mode', 'custom_accent_color', 'wallpaper_path', 'wallpaper_accent', 'wallpaper_blur', 'wallpaper_effect', 'wallpaper_solid_color'].includes(id)) {
     settingsStore.updateDisplaySetting(id, value);
     return;
@@ -487,6 +492,19 @@ const onScroll = (_target: HTMLElement): void => {
                 :placeholder="'placeholder' in setting ? setting.placeholder : undefined"
                 :min="'min' in setting ? setting.min : undefined" :max="'max' in setting ? setting.max : undefined"
                 :step="'step' in setting ? setting.step : undefined" />
+            </div>
+          </div>
+
+          <!-- 快捷键设置 -->
+          <div v-if="currentPage === 9" class="settings-content">
+            <div style="display: flex; text-align: left; gap: 10px; align-items: center; margin-bottom: 20px;">
+              <div style="font-size: 25px; font-weight: bold;">快捷键</div>
+            </div>
+            <div class="setting-section">
+              <Item icon="keyboard" title="启用键盘控制" type="toggle"
+                desc="关闭后所有快捷键失效；按 ? 可随时查看当前键位" :value="settingsStore.keyboardEnabled"
+                @update:value="updateSetting('keyboard_enabled', $event)" />
+              <HotkeySettings />
             </div>
           </div>
 

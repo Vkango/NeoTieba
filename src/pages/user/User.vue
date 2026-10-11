@@ -250,7 +250,7 @@ const onScroll = (target: any) => {
               <div>
                 <h3>关注的吧</h3>
                 <div class="bar-buttons">
-                  <div class="bar-button" v-for="item in FollowBarList"
+                  <div class="bar-button" data-kb-item v-for="item in FollowBarList"
                     @click="emit('openBar', item.forum_name)">
                     <span class="bar-name">{{ item.forum_name }} </span>
                     <span class="level"

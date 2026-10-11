@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { inject, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
+import { inject, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { openUrl } from '@tauri-apps/plugin-opener';
+import { hotkeyState } from '@/core/hotkeys';
 import RippleButton from './RippleButton.vue';
 
 const sendToast = inject<(title: string, duration: number) => void>('sendToast');
@@ -8,6 +9,11 @@ const emit = defineEmits<{
   (event: 'openThread', tid: string): void;
 }>();
 const destination = ref<{ url: string; site: string; threadId?: string } | null>(null);
+
+// 打开期间让全局键盘控制引擎静默，Esc/Tab 由本组件的捕获监听处理
+watch(destination, (value) => {
+  hotkeyState.externalDialogOpen = value !== null;
+});
 const dialogRef = ref<HTMLElement | null>(null);
 const cancelRef = ref<HTMLButtonElement | null>(null);
 let previousFocus: HTMLElement | null = null;

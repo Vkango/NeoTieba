@@ -1,5 +1,5 @@
 <template>
-    <div class="pinned-thread">
+    <div class="pinned-thread" data-kb-item>
         <span class="material-symbols-outlined" :style="{ color: color }">vertical_align_top</span>
 
         <span style="font-weight: bold; " :style="{ color: color }">置顶</span>

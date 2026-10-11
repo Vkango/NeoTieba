@@ -21,6 +21,8 @@ import { URLParser } from '@/services/url-parser';
 import { useApiStore, useHistoryStore, useSettingsStore } from '@/stores';
 import { useTabStore } from '@/stores/tabs';
 import { useTabNavigation } from '@/composables/useTabNavigation';
+import { useHotkeys } from '@/composables/useHotkeys';
+import { hotkeyState } from '@/core/hotkeys';
 import ExternalLinkDialog from '@/components/common/ExternalLinkDialog.vue';
 
 interface NavItem {
@@ -494,6 +496,43 @@ const onShowNotificationBox = (): void => {
   showTabList.value = false;
 };
 
+// 全局键盘控制：逐层关闭浮层（帮助 → 图片查看器 → 右侧面板）
+const closeTopOverlay = (): boolean => {
+  if (hotkeyState.helpVisible) {
+    hotkeyState.helpVisible = false;
+    return true;
+  }
+  if (imageViewerVisibility.value) {
+    imageViewerVisibility.value = false;
+    return true;
+  }
+  if (showTabList.value || showNotificationBox.value) {
+    showTabList.value = false;
+    showNotificationBox.value = false;
+    return true;
+  }
+  return false;
+};
+
+const showToastMessage = (title: string, duration = 3000): void => {
+  ToastComponent.value?.showToast(title, duration);
+};
+
+useHotkeys({
+  addBar: (id: number): void => {
+    void addBar(id);
+  },
+  refreshActiveTab: (): void => {
+    const key = (activeTab.value as TabItem)?.key;
+    if (key === undefined || key === null) return;
+    const tab = tabStore.getTab(String(key));
+    if (tab) onRefreshTab(tab.id);
+  },
+  isViewerOpen: (): boolean => imageViewerVisibility.value,
+  closeTopOverlay,
+  toast: showToastMessage,
+});
+
 const handleUserChanged = async (): Promise<void> => {
   if (titleBarRef.value) {
     await titleBarRef.value.updateAvatar();
@@ -623,6 +662,7 @@ onMounted(async (): Promise<void> => {
       <ImageViewer :imageSrc="imageViewerSrc" :visible="imageViewerVisibility" @close="imageViewerVisibility = false">
       </ImageViewer>
       <Toast ref="ToastComponent" />
+      <HotkeyHelp />
     </Teleport>
     <ExternalLinkDialog @openThread="openThread" />
   </div>

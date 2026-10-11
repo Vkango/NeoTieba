@@ -6,6 +6,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
 import { applyTheme as applyThemeMode, onSystemThemeChange, persistTheme, setAccentSource, setGlobalAccentPair, accentPairFromSeed, type AccentMode } from '@/styles/theme';
 import { extractAccentPair } from '@/utils/color-extract';
+import { HOTKEY_ACTION_MAP, type Combo } from '@/core/hotkeys';
 
 function guessMime(path: string): string {
     const lower = path.toLowerCase();
@@ -94,6 +95,17 @@ const clampInt = (value: unknown, fallback: number, min: number, max: number): n
     return Math.min(max, Math.max(min, parsed));
 };
 
+/** 规范化快捷键覆盖表：仅保留已注册动作的键位数组，过滤非法条目。 */
+export function normalizeHotkeyOverrides(value: unknown): Record<string, Combo[]> {
+    const result: Record<string, Combo[]> = {};
+    if (!value || typeof value !== 'object') return result;
+    for (const [id, combos] of Object.entries(value as Record<string, unknown>)) {
+        if (!HOTKEY_ACTION_MAP.has(id) || !Array.isArray(combos)) continue;
+        result[id] = combos.filter((combo): combo is Combo => typeof combo === 'string' && combo.length > 0);
+    }
+    return result;
+}
+
 export function normalizeThreadSaveDefaults(value: Partial<ThreadSaveDefaults> | null | undefined): ThreadSaveDefaults {
     const base = defaultThreadSaveDefaults();
     if (!value || typeof value !== 'object') return base;
@@ -139,6 +151,10 @@ export const useSettingsStore = defineStore('settings', () => {
     const blockList = ref<string[]>([]);
     const threadSaveDefaults = ref<ThreadSaveDefaults>(defaultThreadSaveDefaults());
     const archiveOnlineFallback = ref(true);
+    /** 全局键盘控制总开关 */
+    const keyboardEnabled = ref(true);
+    /** 键位覆盖表：动作 id → 生效键位（整体替换默认值；空数组 = 禁用该动作） */
+    const hotkeyOverrides = ref<Record<string, Combo[]>>({});
     function updateDisplaySetting(key: string, value: any) {
         switch (key) {
             case 'show_user_id':
@@ -185,6 +201,9 @@ export const useSettingsStore = defineStore('settings', () => {
                 break;
             case 'wallpaper_solid_color':
                 wallpaperSolidColor.value = String(value);
+                break;
+            case 'keyboard_enabled':
+                keyboardEnabled.value = Boolean(value);
                 break;
         }
     }
@@ -383,6 +402,9 @@ export const useSettingsStore = defineStore('settings', () => {
         // 帖子保存
         threadSaveDefaults,
         archiveOnlineFallback,
+        // 键盘控制
+        keyboardEnabled,
+        hotkeyOverrides,
         // Actions
         updateDisplaySetting,
         updateNetworkSetting,
@@ -403,6 +425,7 @@ export const useSettingsStore = defineStore('settings', () => {
         afterHydrate: ({ store }) => {
             store.mediaBlocks = normalizeMediaBlocks(store.mediaBlocks);
             store.threadSaveDefaults = normalizeThreadSaveDefaults(store.threadSaveDefaults);
+            store.hotkeyOverrides = normalizeHotkeyOverrides(store.hotkeyOverrides);
             store.applyTheme(store.theme);
             applyGlobalFont(store.globalFont);
             if (store.accentMode === 'custom') setGlobalAccentPair(accentPairFromSeed(store.customAccentColor));
@@ -415,6 +438,7 @@ export const useSettingsStore = defineStore('settings', () => {
             'wallpaperPath', 'wallpaperAccent', 'wallpaperBlur', 'wallpaperEffect', 'wallpaperSolidColor',
             'useProxy', 'proxyUrl', 'enableAutoSign', 'blockList',
             'threadSaveDefaults', 'archiveOnlineFallback',
+            'keyboardEnabled', 'hotkeyOverrides',
         ],
     },
 });
