@@ -17,6 +17,7 @@
     "fs:allow-write-text-file",
     "fs:allow-read-text-file",
     "fs:allow-read-file",
+    "fs:allow-remove",
     "clipboard-x:default",
     "log:default",
     "opener:allow-open-path",

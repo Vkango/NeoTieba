@@ -48,6 +48,14 @@
 
                     <div class="divider"></div>
 
+                    <button class="control-btn" :disabled="copying" @click="copyImage"
+                        :title="copying ? '正在复制…' : '复制图片'">
+                        <span class="material-symbols-outlined" :class="{ spinning: copying }">{{ copying ?
+                            'progress_activity' : 'content_copy' }}</span>
+                    </button>
+
+                    <div class="divider"></div>
+
                     <button class="control-btn" @click="resetView" title="重置">
                         <span class="material-symbols-outlined">restart_alt</span>
                     </button>
@@ -64,6 +72,11 @@
             <!-- Context Menu -->
             <div v-if="contextMenu.visible" class="context-menu"
                 :style="{ top: contextMenu.y + 'px', left: contextMenu.x + 'px' }" @click.stop>
+                <div class="menu-item" @click="copyImage">
+                    <span class="material-symbols-outlined">content_copy</span>
+                    <span>复制图片</span>
+                </div>
+                <div class="menu-divider"></div>
                 <div class="menu-item" @click="resetView">
                     <span class="material-symbols-outlined">restart_alt</span>
                     <span>重置视图</span>
@@ -86,6 +99,8 @@
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue';
 import { fetchImage } from '@/core/request';
 import { normalizeMediaUrl } from '@/utils/settings-policy';
+import { copyImageToClipboard } from '@/utils/clipboard-image';
+import { useSendToast } from '@/composables/useGlobalProvides';
 import { useSettingsStore } from '@/stores/settings';
 import { isArchiveUrl } from '@/composables/useOfflineMedia';
 const settings = useSettingsStore();
@@ -469,18 +484,30 @@ function resetView() {
     nextTick(() => clampTranslation());
 }
 
+// Copy Image
+const sendToast = useSendToast();
+const copying = ref(false);
+async function copyImage() {
+    if (copying.value || imageFailed.value || imageBlocked.value) return;
+    copying.value = true;
+    contextMenu.value.visible = false;
+    try {
+        await copyImageToClipboard(resolvedImageSrc.value || props.imageSrc);
+        sendToast('图片已复制到剪贴板', 2000);
+    } catch (error) {
+        console.warn('复制图片失败:', props.imageSrc, error);
+        sendToast('复制图片失败，请稍后重试', 3000);
+    } finally {
+        copying.value = false;
+    }
+}
+
 // Context Menu
 function handleContextMenu(e: MouseEvent) {
-    if ((e.target as HTMLElement | null)?.closest('.viewer-image')) {
-        contextMenu.value.visible = false;
-        zoomMenu.value.visible = false;
-        return;
-    }
-
     e.preventDefault();
 
     const menuWidth = 220;
-    const menuHeight = 180;
+    const menuHeight = 130;
     const bounds = overlayRef.value?.getBoundingClientRect();
     let x = e.clientX - (bounds?.left ?? 0);
     let y = e.clientY - (bounds?.top ?? 0);
@@ -677,6 +704,22 @@ html.macos .image-viewer-overlay:not(.embedded) {
 
 .material-symbols-outlined {
     font-size: 18px;
+}
+
+.material-symbols-outlined.spinning {
+    animation: viewer-spin 0.9s linear infinite;
+}
+
+@keyframes viewer-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .material-symbols-outlined.spinning {
+        animation: none;
+    }
 }
 
 .zoom-info {
