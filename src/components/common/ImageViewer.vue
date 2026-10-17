@@ -69,6 +69,13 @@
 
             </div>
 
+            <!-- Dynamic Island (top bar, follows the bottom controls) -->
+            <div v-if="$slots['gallery-island']" class="island-shell">
+                <div class="island-bar" @click.stop>
+                    <slot name="gallery-island"></slot>
+                </div>
+            </div>
+
             <!-- Context Menu -->
             <div v-if="contextMenu.visible" class="context-menu"
                 :style="{ top: contextMenu.y + 'px', left: contextMenu.x + 'px' }" @click.stop>
@@ -601,6 +608,48 @@ html.macos .image-viewer-overlay:not(.embedded) {
     pointer-events: auto;
 }
 
+.island-shell {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: var(--viewer-content-width, 100%);
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 16px 12px;
+    box-sizing: border-box;
+    pointer-events: none;
+    z-index: 20001;
+}
+
+.island-bar {
+    position: relative;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(-8px);
+    transition: opacity .18s ease, transform .18s ease;
+    background-color: rgba(var(--background-color), 0.48);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    padding: 6px 12px;
+    border-radius: 999px;
+    max-width: 100%;
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    box-shadow: none;
+    z-index: 20001;
+    color: rgb(var(--text-color));
+    border: 1px solid rgba(var(--text-color), 0.12);
+}
+
+.controls-visible .island-bar {
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: auto;
+}
+
 .embedded .context-menu,
 .embedded .zoom-preset-menu {
     position: absolute;
@@ -609,7 +658,8 @@ html.macos .image-viewer-overlay:not(.embedded) {
 
 
 @media (hover: none) {
-    .controls-bar {
+    .controls-bar,
+    .island-bar {
         opacity: 1;
         transform: none;
         pointer-events: auto;
@@ -617,7 +667,8 @@ html.macos .image-viewer-overlay:not(.embedded) {
 }
 
 @media (prefers-reduced-motion: reduce) {
-    .controls-bar {
+    .controls-bar,
+    .island-bar {
         transition: none;
     }
 }

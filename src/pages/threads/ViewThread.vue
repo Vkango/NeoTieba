@@ -189,6 +189,7 @@ function resizeWithKeyboard(event: KeyboardEvent) {
 const galleryOnlyAuthor = ref(false);
 const galleryIncludeSubposts = ref(true);
 const subpostGalleryImages = ref<GalleryImage[]>([]);
+const adHocImage = ref<GalleryImage | null>(null);
 const selectedImageId = ref('');
 const galleryAutoFollow = ref(false);
 let galleryFollowVersion = 0;
@@ -204,13 +205,39 @@ const galleryImages = computed<GalleryImage[]>(() => {
         floor: Number(post.floor), src, alt: `第 ${post.floor} 楼图片`
       }] : [];
     }));
-  if (!galleryIncludeSubposts.value) return mainImages;
   // Keep the gallery in reading order. Stable sorting preserves the main
   // floor image before any楼中楼 images discovered for the same floor.
-  return [...mainImages, ...subpostGalleryImages.value].sort((a, b) => a.floor - b.floor);
+  const list = galleryIncludeSubposts.value ? [...mainImages, ...subpostGalleryImages.value] : [...mainImages];
+  list.sort((a, b) => a.floor - b.floor);
+  const adHoc = adHocImage.value;
+  if (adHoc && !list.some(image => image.id === adHoc.id)) {
+    list.push(adHoc);
+    list.sort((a, b) => a.floor - b.floor);
+  }
+  return list;
 });
 const selectedImageIndex = computed(() => galleryImages.value.findIndex(image => image.id === selectedImageId.value));
 const selectedImage = computed(() => galleryImages.value[selectedImageIndex.value]);
+const islandPost = computed(() => threadList.value.find(post => String(post.id) === selectedImage.value?.postId));
+const islandFloorImages = computed(() => galleryImages.value.filter(image => image.postId === selectedImage.value?.postId));
+const islandAuthorName = computed(() => islandPost.value?.author?.name_show || islandPost.value?.author?.name || '匿名用户');
+const islandAvatar = computed(() => 'https://gss0.bdstatic.com/6LZ1dD3d1sgCo2Kml5_Y_D3/sys/portrait/item/' + (islandPost.value?.author?.portrait || 'default'));
+const islandTextSegments = computed(() => {
+  const content = islandPost.value?.content;
+  if (!Array.isArray(content)) return [];
+  const segments: { type: 'text' | 'emoticon'; value: string; alt?: string }[] = [];
+  for (const part of content as Record<string, unknown>[]) {
+    if (Number(part.type) === 2 && typeof part.text === 'string' && part.text) {
+      segments.push({ type: 'emoticon', value: `/assets/emoticons/${part.text}.png`, alt: String(part.c || part.text) });
+    } else if (typeof part.text === 'string') {
+      const text = part.text.replace(/\s+/g, ' ');
+      if (text.trim()) segments.push({ type: 'text', value: text });
+    }
+  }
+  return segments;
+});
+const islandPlainText = computed(() => islandTextSegments.value
+  .map(segment => segment.type === 'emoticon' ? `[${segment.alt}]` : segment.value).join('').trim());
 let layoutTimer: ReturnType<typeof setTimeout> | undefined;
 let layoutAnchor: { id: string; offset: number } | undefined;
 
@@ -274,17 +301,24 @@ async function stepGallery(direction: number) {
   if (direction > 0) void loadGalleryNextPage();
 }
 function selectReplyImage(url: string, postId: string) {
-  if (!galleryIncludeSubposts.value) {
+  if (!galleryOpen.value) {
     openImageViewer?.(url);
     return;
   }
   const image = galleryImages.value.find(image => image.postId === postId && new URL(image.src, window.location.href).href === new URL(url, window.location.href).href);
-  if (image) void selectGalleryImage(image.id);
-  else if (galleryOpen.value) {
-    const id = `subpost-${btoa(url).replace(/[^a-z0-9]/gi, '')}`;
-    if (!subpostGalleryImages.value.some(item => item.id === id)) subpostGalleryImages.value.push({ id, postId, author_id: '', floor: Number(threadList.value.find(p => String(p.id) === postId)?.floor ?? 0), src: url, alt: '楼中楼图片' });
-    selectedImageId.value = id;
+  if (image) {
+    selectGalleryImage(image.id);
+    return;
   }
+  const id = `subpost-${btoa(url).replace(/[^a-z0-9]/gi, '')}`;
+  const floor = Number(threadList.value.find(post => String(post.id) === postId)?.floor ?? 0);
+  const entry: GalleryImage = { id, postId, author_id: '', floor, src: url, alt: '楼中楼图片' };
+  if (galleryIncludeSubposts.value) {
+    if (!subpostGalleryImages.value.some(item => item.id === id)) subpostGalleryImages.value.push(entry);
+  } else {
+    adHocImage.value = entry;
+  }
+  selectedImageId.value = id;
 }
 function registerReplyImages(urls: string[], postId: string) {
   const floor = Number(threadList.value.find(p => String(p.id) === postId)?.floor ?? 0);
@@ -723,6 +757,24 @@ const ViewAllReplie = (data: SubPostInfo): void => {
       <ImageViewer v-if="galleryOpen && selectedImage" :image-src="offlineResolver(selectedImage.src)"
         :fallback-src="selectedImage.src"
         :content-width="Math.max(1, viewWidth - contextWidth - 10)" visible embedded>
+        <template #gallery-island>
+          <div v-if="islandPost" class="gallery-island">
+            <RemoteImage kind="avatars" class="island-avatar" :src="islandAvatar" :alt="islandAuthorName" />
+            <span class="island-name">{{ islandAuthorName }}</span>
+            <span v-if="islandTextSegments.length" class="island-text" :title="islandPlainText">
+              <template v-for="(segment, index) in islandTextSegments" :key="index"><img
+                  v-if="segment.type === 'emoticon'" class="island-emoticon" :src="segment.value" :alt="segment.alt"
+                  referrerpolicy="no-referrer" /><template v-else>{{ segment.value }}</template></template>
+            </span>
+            <div v-if="islandFloorImages.length" class="island-dots" role="group" aria-label="本楼图片">
+              <button v-for="(image, index) in islandFloorImages" :key="image.id" type="button" class="island-dot"
+                :class="{ active: image.id === selectedImageId }" @click="selectGalleryImage(image.id)"
+                :title="`第 ${image.floor} 楼 · 第 ${index + 1} 张`"
+                :aria-label="`第 ${image.floor} 楼第 ${index + 1} 张，共 ${islandFloorImages.length} 张`"
+                :aria-current="image.id === selectedImageId ? 'true' : undefined"></button>
+            </div>
+          </div>
+        </template>
         <template #gallery-controls>
           <button type="button" class="gallery-button" :disabled="selectedImageIndex <= 0" @click="stepGallery(-1)"
             title="上一张" aria-label="上一张">
@@ -1111,6 +1163,95 @@ const ViewAllReplie = (data: SubPostInfo): void => {
   line-height: 12px;
   font-size: 9px;
   opacity: .6;
+}
+
+.gallery-island {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  max-width: min(560px, calc(100vw - 48px));
+}
+
+.island-avatar {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.island-avatar + .island-name {
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.island-name {
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 22px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.island-text {
+  font-size: 12px;
+  line-height: 22px;
+  opacity: .65;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.island-emoticon {
+  width: 14px;
+  height: 14px;
+  vertical-align: -2px;
+  object-fit: contain;
+}
+
+.island-dots {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+  margin-left: 2px;
+  padding-left: 9px;
+  border-left: 1px solid rgba(var(--text-color), .15);
+}
+
+.island-dot {
+  width: 6px;
+  height: 6px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(var(--text-color), .28);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: width .25s cubic-bezier(.4, 0, .2, 1), background-color .25s ease, transform .15s ease;
+}
+
+.island-dot:hover {
+  transform: scale(1.4);
+}
+
+.island-dot.active {
+  width: 16px;
+  background: rgb(var(--primary-color));
+}
+
+.island-dot:focus-visible {
+  outline: 2px solid rgb(var(--primary-color));
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .island-dot {
+    transition: none;
+  }
 }
 
 .gallery-divider {
