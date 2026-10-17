@@ -14,6 +14,8 @@ declare module 'vue' {
     Bar: typeof import('./components/user/Bar.vue')['default']
     BarInfoCard: typeof import('./components/user/BarInfoCard.vue')['default']
     Container: typeof import('./components/common/Container.vue')['default']
+    ContextMenu: typeof import('./components/ui/ContextMenu.vue')['default']
+    ContextMenuPanel: typeof import('./components/ui/ContextMenuPanel.vue')['default']
     Drawer: typeof import('./components/layout/Drawer.vue')['default']
     ErrorReport: typeof import('./components/notification/ErrorReport.vue')['default']
     ExternalLinkDialog: typeof import('./components/common/ExternalLinkDialog.vue')['default']

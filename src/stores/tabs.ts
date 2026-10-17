@@ -119,6 +119,54 @@ export const useTabStore = defineStore('tabs', () => {
     });
   }
 
+  /** 批量关闭的目标选取：仅用户可见且可关闭的标签会被关闭（始终排除目标标签本身）；
+   *  隐藏标签（如欢迎页）与 closable === false 的标签始终保留。 */
+  function closeableTabIdsBetween(predicate: (tab: TabItem, index: number, targetIndex: number) => boolean, targetId: number | string): number[] {
+    const ordered = visibleTabs.value;
+    const targetIndex = ordered.findIndex(t => t.id === targetId || t.key === String(targetId));
+    if (targetIndex < 0) return [];
+    return ordered
+      .map((tab, index) => ({ tab, index }))
+      .filter(({ tab, index }) => tab.id !== targetId && tab.show !== false && tab.closable !== false && predicate(tab, index, targetIndex))
+      .map(({ tab }) => tab.id);
+  }
+
+  function removeTabsByIds(ids: number[], switchToKey: string | null): void {
+    if (!ids.length) return;
+    const removed = new Set(ids);
+    tabs.value = tabs.value.filter(t => !removed.has(t.id));
+    tabs.value.forEach((t, index) => {
+      t.position = index;
+    });
+    if (switchToKey !== null) switchTab(switchToKey);
+  }
+
+  /** 当前激活标签将被关闭时，批量关闭后回落到目标标签 */
+  function switchKeyIfActiveRemoved(ids: number[], fallbackKey: string): string | null {
+    return currentTab.value && ids.includes(currentTab.value.id) ? fallbackKey : null;
+  }
+
+  function closeOtherTabs(id: number | string): void {
+    const target = getTab(id);
+    if (!target) return;
+    const ids = closeableTabIdsBetween(() => true, target.id);
+    removeTabsByIds(ids, switchKeyIfActiveRemoved(ids, target.key));
+  }
+
+  function closeLeftTabs(id: number | string): void {
+    const target = getTab(id);
+    if (!target) return;
+    const ids = closeableTabIdsBetween((_tab, index, targetIndex) => index < targetIndex, target.id);
+    removeTabsByIds(ids, switchKeyIfActiveRemoved(ids, target.key));
+  }
+
+  function closeRightTabs(id: number | string): void {
+    const target = getTab(id);
+    if (!target) return;
+    const ids = closeableTabIdsBetween((_tab, index, targetIndex) => index > targetIndex, target.id);
+    removeTabsByIds(ids, switchKeyIfActiveRemoved(ids, target.key));
+  }
+
   function startDrag(tabId: number) {
     draggingTabId.value = tabId;
   }
@@ -147,6 +195,9 @@ export const useTabStore = defineStore('tabs', () => {
     getTab,
     setTab,
     reorderTabs,
+    closeOtherTabs,
+    closeLeftTabs,
+    closeRightTabs,
     startDrag,
     updateDragOffset,
     endDrag

@@ -24,6 +24,7 @@ import { useTabNavigation } from '@/composables/useTabNavigation';
 import { useHotkeys } from '@/composables/useHotkeys';
 import { hotkeyState } from '@/core/hotkeys';
 import ExternalLinkDialog from '@/components/common/ExternalLinkDialog.vue';
+import ContextMenu from '@/components/ui/ContextMenu.vue';
 
 interface NavItem {
   id: number;
@@ -643,7 +644,7 @@ onMounted(async (): Promise<void> => {
     </div>
     <TitleBar ref="titleBarRef" @showTabs="onShowTabs" @showNotificationBox="onShowNotificationBox"
       :msgCount="(notificationComponent?.notifications?.length || 0) + (notificationComponent?.hiddenNotifications?.length || 0)" />
-    <Tabs class="tabs" @onSwitchTabs="onSwitchTabs" @onTabDelete="onTabDelete">
+    <Tabs class="tabs" @onSwitchTabs="onSwitchTabs" @onTabDelete="onTabDelete" @refresh="onRefreshTab">
     </Tabs>
     <Transition name="notification-box">
       <TabList class="notification-box" v-if="showTabList" @refresh="onRefreshTab"></TabList>
@@ -663,6 +664,8 @@ onMounted(async (): Promise<void> => {
       </ImageViewer>
       <Toast ref="ToastComponent" />
       <HotkeyHelp />
+      <!-- 全局右键菜单宿主：任意组件通过 openContextMenu() 弹出 -->
+      <ContextMenu />
     </Teleport>
     <ExternalLinkDialog @openThread="openThread" />
   </div>

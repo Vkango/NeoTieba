@@ -38,6 +38,7 @@ import { useTabStore } from '@/stores/tabs';
 import { computed } from 'vue';
 import { writeText } from '@tauri-apps/plugin-clipboard-manager';
 import { errorService } from '@/core/error-service';
+import { getTabLink } from '@/utils/tab-link';
 
 const emit = defineEmits<{ (e: 'refresh', id: number): void }>();
 
@@ -52,13 +53,8 @@ function refreshCurrentTab(): void {
 async function copyCurrentTabLink(): Promise<void> {
   const tab = currentTab.value;
   if (!tab) return;
-  const props = tab.props || {};
-  let link = `neotieba://${(tab.component?.__name || 'container').toLowerCase()}`;
-  if (props.tid) link = `https://tieba.baidu.com/p/${encodeURIComponent(String(props.tid))}`;
-  else if (props.uid) link = `https://tieba.baidu.com/home/main?id=${encodeURIComponent(String(props.uid))}`;
-  else if (props.barName) link = `https://tieba.baidu.com/f?kw=${encodeURIComponent(String(props.barName))}`;
   try {
-    await writeText(link);
+    await writeText(getTabLink(tab));
   } catch (error) {
     errorService.handleError(error, '复制标签链接');
   }

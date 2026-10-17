@@ -9,7 +9,7 @@
       'dragging': tabStore.draggingTabId === tab.id,
       'closing': tab.isClosing
     }" :key="tab.id" :data-tab-id="tab.id" @click="handleClick(tab)" @mousedown.stop="startDrag($event, tab)"
-      :style="getTabStyle(tab)">
+      @contextmenu.prevent="openTabContextMenu($event, tab)" :style="getTabStyle(tab)">
       <div class="tab-content">
         <img class="icon" :class="{ 'invert': tab.icon_invert }" :src="getIconPath(tab.icon)"
           referrerpolicy="no-referrer" />
@@ -30,6 +30,10 @@ import { useTabStore } from '@/stores/tabs';
 import RippleButton from '#components/common/RippleButton.vue';
 
 import { getTabDragPreview, type DragTabLayout } from './tab-drag';
+import { openContextMenu } from '@/utils/contextMenu';
+import { getTabLink } from '@/utils/tab-link';
+import { writeText } from '@tauri-apps/plugin-clipboard-manager';
+import { errorService } from '@/core/error-service';
 
 const tabStore = useTabStore();
 const displayedTabs = computed(() => tabStore.visibleTabs.filter((tab: TabItem) => tab.show));
@@ -39,6 +43,7 @@ const emit = defineEmits<{
   (e: 'click'): void;
   (e: 'onSwitchTabs', id: number): void;
   (e: 'onTabDelete', key: string | number): void;
+  (e: 'refresh', id: number): void;
 }>();
 
 // Watch for activeKey changes and emit event
@@ -252,6 +257,60 @@ const handleClick = (tab: TabItem): void => {
   tabStore.switchTab(tab.key);
   emit('onSwitchTabs', tab.id);
 };
+
+async function copyTabLink(tab: TabItem): Promise<void> {
+  try {
+    await writeText(getTabLink(tab));
+  } catch (error) {
+    errorService.handleError(error, '复制标签链接');
+  }
+}
+
+// 标签右键菜单：统计目标两侧可关闭的标签数，用于禁用无效的批量关闭项
+async function openTabContextMenu(event: MouseEvent, tab: TabItem): Promise<void> {
+  if (tab.isClosing || String(tab.id).startsWith('closing-')) return;
+  const ordered = tabStore.visibleTabs.filter((item: TabItem) => item.show);
+  const targetIndex = ordered.findIndex((item: TabItem) => item.id === tab.id);
+  const countSide = (from: number, to: number): number =>
+    ordered.slice(from, to).filter((item: TabItem) => item.closable !== false).length;
+  const countLeft = targetIndex >= 0 ? countSide(0, targetIndex) : 0;
+  const countRight = targetIndex >= 0 ? countSide(targetIndex + 1, ordered.length) : 0;
+
+  const result = await openContextMenu({
+    x: event.clientX,
+    y: event.clientY,
+    items: [
+      { id: 'close', label: '关闭标签', icon: 'close', shortcut: 'Ctrl+W', disabled: tab.closable === false },
+      { id: 'refresh', label: '刷新', icon: 'refresh', shortcut: 'F5' },
+      { id: 'copy-link', label: '复制链接', icon: 'content_copy' },
+      { separator: true },
+      { id: 'close-others', label: '关闭其他标签', icon: 'tab_unselected', disabled: countLeft + countRight === 0 },
+      { id: 'close-left', label: '关闭左侧标签', icon: 'keyboard_double_arrow_left', disabled: countLeft === 0 },
+      { id: 'close-right', label: '关闭右侧标签', icon: 'keyboard_double_arrow_right', disabled: countRight === 0 }
+    ]
+  });
+  if (!result) return;
+  switch (result.id) {
+    case 'close':
+      handleDelete(tab);
+      break;
+    case 'refresh':
+      emit('refresh', tab.id);
+      break;
+    case 'copy-link':
+      await copyTabLink(tab);
+      break;
+    case 'close-others':
+      tabStore.closeOtherTabs(tab.id);
+      break;
+    case 'close-left':
+      tabStore.closeLeftTabs(tab.id);
+      break;
+    case 'close-right':
+      tabStore.closeRightTabs(tab.id);
+      break;
+  }
+}
 
 // Backward compatibility methods (exposed for parent components)
 const addTab = (
