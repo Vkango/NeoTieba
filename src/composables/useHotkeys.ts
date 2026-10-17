@@ -111,8 +111,13 @@ export function useHotkeys(ctx: HotkeyContext): void {
 
   /* ------------------------------- 动作实现 ------------------------------- */
 
+  /** 可交互标签：过滤掉隐藏标签（如欢迎页），保证 Ctrl+1 对应最左侧可见标签 */
+  function shownTabs() {
+    return tabStore.visibleTabs.filter((tab) => tab.show !== false);
+  }
+
   function cycleTab(direction: number): boolean {
-    const tabs = tabStore.visibleTabs;
+    const tabs = shownTabs();
     if (tabs.length < 2) return false;
     const index = tabs.findIndex((tab) => tab.key === tabStore.activeKey);
     const next = (index + direction + tabs.length) % tabs.length;
@@ -121,7 +126,7 @@ export function useHotkeys(ctx: HotkeyContext): void {
   }
 
   function jumpToTab(n: number): boolean {
-    const tabs = tabStore.visibleTabs;
+    const tabs = shownTabs();
     if (!tabs.length || n < 1) return false;
     const target = n >= 9 ? tabs[tabs.length - 1] : tabs[n - 1];
     if (!target) return false;
