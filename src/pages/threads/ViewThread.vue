@@ -253,9 +253,25 @@ async function followGalleryFloor(version: number) {
     scheduleReadingPosition();
   }
 }
-function stepGallery(direction: number) {
-  const image = galleryImages.value[selectedImageIndex.value + direction];
-  if (image) void selectGalleryImage(image.id);
+const galleryAtEnd = computed(() => selectedImageIndex.value >= galleryImages.value.length - 1);
+const galleryHasMore = computed(() => Boolean(returnData.value.data?.page?.has_more) && !isThreadsLoading.value);
+async function loadGalleryNextPage() {
+  if (!galleryOpen.value || !galleryHasMore.value) return;
+  if (await loadData(currentPage.value + 1)) {
+    await nextTick();
+    const image = galleryImages.value[selectedImageIndex.value + 1];
+    if (image) selectedImageId.value = image.id;
+  }
+}
+async function stepGallery(direction: number) {
+  const index = selectedImageIndex.value + direction;
+  const image = galleryImages.value[index];
+  if (image) {
+    selectedImageId.value = image.id;
+    if (direction > 0 && index === galleryImages.value.length - 1 && galleryHasMore.value) void loadData(currentPage.value + 1);
+    return;
+  }
+  if (direction > 0) void loadGalleryNextPage();
 }
 function selectReplyImage(url: string, postId: string) {
   if (!galleryIncludeSubposts.value) {
@@ -714,9 +730,10 @@ const ViewAllReplie = (data: SubPostInfo): void => {
           </button>
           <span class="image-position" aria-live="polite">{{ selectedImageIndex + 1 }} / {{ galleryImages.length
           }}<small>第 {{ selectedImage.floor }} 楼</small></span>
-          <button type="button" class="gallery-button" :disabled="selectedImageIndex >= galleryImages.length - 1"
-            @click="stepGallery(1)" title="下一张" aria-label="下一张">
-            <span class="material-symbols-outlined">chevron_right</span>
+          <button type="button" class="gallery-button" :disabled="galleryAtEnd && !galleryHasMore"
+            @click="stepGallery(1)" :title="galleryAtEnd && galleryHasMore ? '加载下一页' : '下一张'" aria-label="下一张">
+            <span class="material-symbols-outlined" :class="{ spinning: galleryAtEnd && isThreadsLoading }">{{
+              galleryAtEnd && isThreadsLoading ? 'progress_activity' : 'chevron_right' }}</span>
           </button>
           <button type="button" class="gallery-button follow-toggle" @click="galleryAutoFollow = !galleryAutoFollow"
             :aria-pressed="galleryAutoFollow" :title="galleryAutoFollow ? '停止自动跟随' : '开始自动跟随'"
@@ -1105,6 +1122,22 @@ const ViewAllReplie = (data: SubPostInfo): void => {
 
 .gallery-button .material-symbols-outlined {
   font-size: 18px;
+}
+
+.gallery-button .material-symbols-outlined.spinning {
+  animation: gallery-spin .9s linear infinite;
+}
+
+@keyframes gallery-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gallery-button .material-symbols-outlined.spinning {
+    animation: none;
+  }
 }
 
 .empty-gallery {
