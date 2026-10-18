@@ -25,6 +25,7 @@ declare module 'vue' {
     HorizontalMaskScroll: typeof import('./components/common/HorizontalMaskScroll.vue')['default']
     HotkeyHelp: typeof import('./components/common/HotkeyHelp.vue')['default']
     HotkeySettings: typeof import('./components/settings/HotkeySettings.vue')['default']
+    ImageHoverPreview: typeof import('./components/common/ImageHoverPreview.vue')['default']
     ImageViewer: typeof import('./components/common/ImageViewer.vue')['default']
     Item: typeof import('./components/common/Item.vue')['default']
     Loading: typeof import('./components/common/Loading.vue')['default']

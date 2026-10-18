@@ -25,6 +25,7 @@ import { useTabNavigation } from '@/composables/useTabNavigation';
 import { useHotkeys } from '@/composables/useHotkeys';
 import { hotkeyState } from '@/core/hotkeys';
 import ExternalLinkDialog from '@/components/common/ExternalLinkDialog.vue';
+import ImageHoverPreview from '@/components/common/ImageHoverPreview.vue';
 import ContextMenu from '@/components/ui/ContextMenu.vue';
 import CollectionRail from '@/components/layout/CollectionRail.vue';
 import CollectionDrawer from '@/components/layout/CollectionDrawer.vue';
@@ -676,6 +677,8 @@ onMounted(async (): Promise<void> => {
     <!-- 图片查看器与 Toast 必须盖过楼中楼卡片等弹窗（3200 层）。
          传送至 body，与楼中楼卡片同处根层叠上下文，避免被容器内的层叠上下文压住。 -->
     <Teleport to="body">
+      <!-- 悬停快速预览：利用阅读区右侧空白浮动展示，层级低于图片查看器 -->
+      <ImageHoverPreview />
       <ImageViewer :imageSrc="imageViewerSrc" :visible="imageViewerVisibility" @close="imageViewerVisibility = false">
       </ImageViewer>
       <Toast ref="ToastComponent" />

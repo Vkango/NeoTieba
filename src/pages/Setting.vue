@@ -145,6 +145,7 @@ const displaySettings: ComputedRef<SettingItem[]> = computed(() => [
   { id: 'only_author', icon: 'person', title: '默认只看楼主', type: 'toggle', desc: '打开帖子时优先只显示楼主内容', value: settingsStore.onlyAuthor },
   { id: 'no_image', icon: 'image_not_supported', title: '无图模式', type: 'toggle', desc: '按下方勾选项禁用媒体，保留表情与壁纸', value: settingsStore.noImage },
   { id: 'show_collection_rail', icon: 'collections_bookmark', title: '在导航中展示集锦预览', type: 'toggle', desc: '关闭后隐藏左侧头像栏，但仍可将标签拖入左侧区域加入集锦', value: settingsStore.showCollectionRail },
+  { id: 'hover_image_preview', icon: 'zoom_in', title: '悬停快速预览图片', type: 'toggle', desc: '鼠标在帖子图片上短暂停留时，于右侧空白处浮动展示大图；空间不足时自动关闭，点击仍进入完整查看器', value: settingsStore.hoverImagePreview },
   {
     id: 'theme',
     icon: 'palette',
@@ -280,7 +281,7 @@ const updateSetting = (id: string, value: string | boolean | number): void => {
   }
   if (id === 'archive_online_fallback') { settingsStore.archiveOnlineFallback = Boolean(value); return; }
   if (id === 'keyboard_enabled') { settingsStore.updateDisplaySetting(id, value); return; }
-  if (['show_user_id', 'show_collection_rail', 'only_author', 'no_image', 'theme', 'global_font', 'accent_mode', 'custom_accent_color', 'wallpaper_path', 'wallpaper_accent', 'wallpaper_blur', 'wallpaper_effect', 'wallpaper_solid_color'].includes(id)) {
+  if (['show_user_id', 'show_collection_rail', 'hover_image_preview', 'only_author', 'no_image', 'theme', 'global_font', 'accent_mode', 'custom_accent_color', 'wallpaper_path', 'wallpaper_accent', 'wallpaper_blur', 'wallpaper_effect', 'wallpaper_solid_color'].includes(id)) {
     settingsStore.updateDisplaySetting(id, value);
     return;
   }
