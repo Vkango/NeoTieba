@@ -552,3 +552,18 @@ html.macos .tabs {
     left: 70px;
     width: calc(100% - 400px);
 }
+/* 灵动岛风格提示胶囊（全局通用）：与看图模式顶部 island-bar 同款式样。
+   Toast、头像栏悬停标题、拖拽引导胶囊等统一引用，不要在组件里重复这些外观属性。 */
+.dynamic-island-pill {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background-color: rgba(var(--background-color), 0.48);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    padding: 6px 12px;
+    border-radius: 999px;
+    color: rgb(var(--text-color));
+    border: 1px solid rgba(var(--text-color), 0.12);
+    box-shadow: none;
+}

@@ -12,6 +12,10 @@
           :disabled="!currentTab" @click="copyCurrentTabLink">
           <span class="material-symbols-outlined">content_copy</span>
         </RippleButton>
+        <RippleButton class="drawer-action" title="添加当前标签到集锦" aria-label="添加当前标签到集锦"
+          :disabled="!currentTab || !currentCollectionPayload" @click="addCurrentTabToCollection">
+          <span class="material-symbols-outlined">bookmark_add</span>
+        </RippleButton>
       </div>
     </div>
     <div class="tabs-list-">
@@ -35,19 +39,39 @@
 <script setup lang="ts">
 import RippleButton from '#components/common/RippleButton.vue';
 import { useTabStore } from '@/stores/tabs';
-import { computed } from 'vue';
+import { useCollectionStore, DEFAULT_GROUP_ID } from '@/stores/collection';
+import { computed, inject } from 'vue';
 import { writeText } from '@tauri-apps/plugin-clipboard-manager';
 import { errorService } from '@/core/error-service';
 import { getTabLink } from '@/utils/tab-link';
+import { tabToCollectionPayload } from '@/utils/collection-capture';
 
 const emit = defineEmits<{ (e: 'refresh', id: number): void }>();
 
 const tabStore = useTabStore();
+const collectionStore = useCollectionStore();
+const sendToast = inject<(title: string, duration?: number) => void>('sendToast');
 const displayedTabs = computed(() => tabStore.tabs.filter(tab => tab.show));
 const currentTab = computed(() => tabStore.currentTab);
+const currentCollectionPayload = computed(() =>
+  currentTab.value ? tabToCollectionPayload(currentTab.value) : null);
 
 function refreshCurrentTab(): void {
   if (currentTab.value) emit('refresh', currentTab.value.id);
+}
+
+function addCurrentTabToCollection(): void {
+  const tab = currentTab.value;
+  if (!tab) return;
+  const payload = tabToCollectionPayload(tab);
+  if (!payload) {
+    sendToast?.('页面尚未加载完成，或该标签类型不支持加入集锦', 2500);
+    return;
+  }
+  const result = collectionStore.addItem(payload, DEFAULT_GROUP_ID);
+  sendToast?.(result.created
+    ? `已添加到集锦「${result.groupName}」`
+    : `已存在于集锦「${result.groupName}」`, 2500);
 }
 
 async function copyCurrentTabLink(): Promise<void> {

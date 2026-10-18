@@ -20,11 +20,14 @@ import { clipboardService } from '@/services/clipboard-service';
 import { URLParser } from '@/services/url-parser';
 import { useApiStore, useHistoryStore, useSettingsStore } from '@/stores';
 import { useTabStore } from '@/stores/tabs';
+import { useCollectionStore } from '@/stores/collection';
 import { useTabNavigation } from '@/composables/useTabNavigation';
 import { useHotkeys } from '@/composables/useHotkeys';
 import { hotkeyState } from '@/core/hotkeys';
 import ExternalLinkDialog from '@/components/common/ExternalLinkDialog.vue';
 import ContextMenu from '@/components/ui/ContextMenu.vue';
+import CollectionRail from '@/components/layout/CollectionRail.vue';
+import CollectionDrawer from '@/components/layout/CollectionDrawer.vue';
 
 interface NavItem {
   id: number;
@@ -38,6 +41,7 @@ interface TabInfo {
   title: string;
   icon: string;
   icon_invert?: boolean;
+  authorIcon?: string;
 }
 
 interface ToastComponent {
@@ -90,6 +94,7 @@ const Api = apiStore.getApi();
 const tabStore = useTabStore();
 const historyStore = useHistoryStore();
 const settingsStore = useSettingsStore();
+const collectionStore = useCollectionStore();
 
 const containerStyle = computed(() => {
   if (settingsStore.wallpaperEffect !== 'image' || !settingsStore.wallpaperUrl) {
@@ -304,7 +309,8 @@ const setTabInfo = (info: TabInfo): void => {
   tabStore.updateTabMeta(keyStr, {
     title: info.title,
     icon: info.icon,
-    icon_invert: info.icon_invert ?? tab?.icon_invert ?? false
+    icon_invert: info.icon_invert ?? tab?.icon_invert ?? false,
+    ...(info.authorIcon !== undefined ? { authorIcon: info.authorIcon } : {})
   });
   if (tab) {
     addHistoryFromTabMeta(tab, info);
@@ -507,6 +513,10 @@ const closeTopOverlay = (): boolean => {
     imageViewerVisibility.value = false;
     return true;
   }
+  if (collectionStore.drawerOpen) {
+    collectionStore.closeDrawer();
+    return true;
+  }
   if (showTabList.value || showNotificationBox.value) {
     showTabList.value = false;
     showNotificationBox.value = false;
@@ -626,11 +636,16 @@ onMounted(async (): Promise<void> => {
 </script>
 
 <template>
-  <div id="container" :style="{ ...containerStyle, ...solidBackgroundStyle }">
+  <div id="container"
+    :class="{ 'drawer-open': collectionStore.drawerOpen, 'drawer-resizing': collectionStore.resizing }"
+    :style="{ ...containerStyle, ...solidBackgroundStyle, '--collection-drawer-width': `${collectionStore.drawerWidth}px` }">
     <div id="container-overlay" :style="overlayStyle"></div>
     <div class="navi">
-      <RippleButtonWithIcon @click="addBar(item.id)" class="navi-button" v-for="item in naviListItem"
-        :class="{ 'selected': item.selected }" :icon="item.icon" :title="item.title"></RippleButtonWithIcon>
+      <div class="navi-fixed">
+        <RippleButtonWithIcon @click="addBar(item.id)" class="navi-button" v-for="item in naviListItem"
+          :class="{ 'selected': item.selected }" :icon="item.icon" :title="item.title"></RippleButtonWithIcon>
+      </div>
+      <CollectionRail class="navi-collection" />
     </div>
     <div class="container">
       <div v-for="tab in tabStore.tabs" v-show="tab.key === activeTab.key" :key="tab.key" class="tab-pane">
@@ -657,6 +672,7 @@ onMounted(async (): Promise<void> => {
         :tabsRef="notificationComponent">
       </NotificationBox>
     </Transition>
+    <CollectionDrawer />
     <!-- 图片查看器与 Toast 必须盖过楼中楼卡片等弹窗（3200 层）。
          传送至 body，与楼中楼卡片同处根层叠上下文，避免被容器内的层叠上下文压住。 -->
     <Teleport to="body">
@@ -700,6 +716,7 @@ onMounted(async (): Promise<void> => {
 .navi-button {
   opacity: 0.5;
   transition: opacity 0.2s ease;
+  width: 100%;
 }
 
 .navi-button:hover {
@@ -739,17 +756,41 @@ onMounted(async (): Promise<void> => {
   left: 70px;
   height: calc(100% - 45px);
   border-radius: 5px 0 0 0;
+  transition: left 0.3s ease, width 0.3s ease;
+}
+
+/* 集锦分屏：内容区向右避让，给左侧面板留出区域 */
+#container.drawer-open .container {
+  left: calc(70px + var(--collection-drawer-width, 380px));
+  width: calc(100% - 70px - var(--collection-drawer-width, 380px));
+}
+
+/* 拖拽尺寸调节器时禁用过渡，实时跟随 */
+#container.drawer-resizing .container {
+  transition: none;
 }
 
 .navi {
   top: 0px;
   width: 70px;
+  height: 100%;
+  /* border-box：避免 padding 撑出窗口底部导致集锦栏底边框被截断 */
+  box-sizing: border-box;
   position: fixed;
   display: flex;
   flex-direction: column;
   padding: 5px 0;
   background-color: rgba(30, 31, 32, 0);
-  overflow-y: auto;
+  overflow: hidden;
+}
+
+.navi-fixed {
+  flex: 0 0 auto;
+}
+
+.navi-collection {
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .list {
@@ -788,6 +829,17 @@ onMounted(async (): Promise<void> => {
   height: 42px;
   overflow-y: hidden;
   z-index: 1101;
+  transition: left 0.3s ease, width 0.3s ease;
+}
+
+/* 集锦分屏：标签条同步右移避让 */
+#container.drawer-open .tabs {
+  left: calc(70px + var(--collection-drawer-width, 380px));
+  width: calc(100% - 400px - var(--collection-drawer-width, 380px));
+}
+
+#container.drawer-resizing .tabs {
+  transition: none;
 }
 
 .thread .avatar {

@@ -25,17 +25,21 @@
 
 <script setup lang="ts">
 import type { TabItem } from '@/types/common';
-import { computed, ref, onBeforeUnmount, nextTick, type Component, watch } from 'vue';
+import { computed, inject, ref, onBeforeUnmount, nextTick, type Component, watch } from 'vue';
 import { useTabStore } from '@/stores/tabs';
+import { useCollectionStore, DEFAULT_GROUP_ID } from '@/stores/collection';
 import RippleButton from '#components/common/RippleButton.vue';
 
 import { getTabDragPreview, type DragTabLayout } from './tab-drag';
-import { openContextMenu } from '@/utils/contextMenu';
+import { openContextMenu, type ContextMenuItem } from '@/utils/contextMenu';
 import { getTabLink } from '@/utils/tab-link';
+import { tabToCollectionPayload } from '@/utils/collection-capture';
 import { writeText } from '@tauri-apps/plugin-clipboard-manager';
 import { errorService } from '@/core/error-service';
 
 const tabStore = useTabStore();
+const collectionStore = useCollectionStore();
+const sendToast = inject<(title: string, duration?: number) => void>('sendToast');
 const displayedTabs = computed(() => tabStore.visibleTabs.filter((tab: TabItem) => tab.show));
 
 // Emit events for parent components
@@ -138,15 +142,25 @@ function updateDragPreview(): void {
   tabStore.updateDragOffset(offset);
 }
 
+// 拖拽悬停到左侧集锦头像栏（70px 导航条、标题栏以下）时冻结排序预览并高亮
+const isOverCollectionRail = (event: MouseEvent): boolean =>
+  event.clientX <= 70 && event.clientY > 45;
+
 function onDrag(event: MouseEvent): void {
   const session = dragSession;
   if (!session || session.finishing) return;
   session.currentX = event.clientX;
+  tabStore.dragOverCollection = isOverCollectionRail(event);
   if (!isDragging.value) {
     if (Math.abs(session.currentX - session.startX) < 5) return;
     isDragging.value = true;
     tabStore.startDrag(session.id);
+    // 拖拽一开始就点亮头像栏提示（不可加入的标签不高亮，仅禁止光标）
+    const draggedTab = tabStore.getTab(session.id);
+    tabStore.collectionDragEligible = !!draggedTab && !!tabToCollectionPayload(draggedTab);
+    tabStore.collectionDragActive = true;
   }
+  if (tabStore.dragOverCollection) return;
   updateDragPreview();
 }
 
@@ -162,12 +176,19 @@ function finishDrag(commit: boolean): void {
   if (!session || session.finishing) return;
   session.finishing = true;
   removeDragListeners();
+  const droppedOnCollection = tabStore.dragOverCollection;
+  tabStore.dragOverCollection = false;
+  tabStore.collectionDragActive = false;
+  tabStore.collectionDragEligible = false;
   suppressClick = isDragging.value;
   // Preview already put neighbors in their final visual slots. Changing their
   // layout positions and resetting transforms must be one unanimated handoff.
   isSettling.value = isDragging.value;
   settlingTabId.value = isDragging.value ? session.id : null;
-  if (commit && isDragging.value) {
+  if (commit && isDragging.value && droppedOnCollection) {
+    // 拖放到左侧头像栏：加入集锦，而不是重排标签
+    addTabToCollection(session.id);
+  } else if (commit && isDragging.value) {
     const from = session.layout.findIndex(tab => tab.id === session.id);
     const to = session.order.indexOf(session.id);
     const target = session.layout[to];
@@ -223,6 +244,9 @@ onBeforeUnmount(() => {
   if (settleTimer !== null) clearTimeout(settleTimer);
   isSettling.value = false;
   dragSession = null;
+  tabStore.dragOverCollection = false;
+  tabStore.collectionDragActive = false;
+  tabStore.collectionDragEligible = false;
   tabStore.endDrag();
 });
 
@@ -266,6 +290,38 @@ async function copyTabLink(tab: TabItem): Promise<void> {
   }
 }
 
+/** 把标签加入集锦；groupId 传 'new' 表示新建分组 */
+function addTabToCollection(idOrTab: number | string | TabItem, groupId?: string): void {
+  const tab = typeof idOrTab === 'object'
+    ? idOrTab
+    : tabStore.getTab(idOrTab);
+  if (!tab) return;
+  const payload = tabToCollectionPayload(tab);
+  if (!payload) {
+    sendToast?.('页面尚未加载完成，或该标签类型不支持加入集锦', 2500);
+    return;
+  }
+  let targetGroupId = groupId;
+  if (targetGroupId === 'new') {
+    if (collectionStore.itemExists(payload.type, payload.target)) targetGroupId = undefined;
+    else targetGroupId = collectionStore.addGroup().id;
+  }
+  const result = collectionStore.addItem(payload, targetGroupId || DEFAULT_GROUP_ID);
+  sendToast?.(result.created
+    ? `已添加到集锦「${result.groupName}」`
+    : `已存在于集锦「${result.groupName}」`, 2500);
+}
+
+const collectionMenuChildren = (): ContextMenuItem[] => [
+  ...collectionStore.orderedGroups.map(group => ({
+    id: `add-collection:${group.id}`,
+    label: group.name,
+    icon: 'folder'
+  })),
+  { separator: true },
+  { id: 'add-collection:new', label: '新建分组', icon: 'add' }
+];
+
 // 标签右键菜单：统计目标两侧可关闭的标签数，用于禁用无效的批量关闭项
 async function openTabContextMenu(event: MouseEvent, tab: TabItem): Promise<void> {
   if (tab.isClosing || String(tab.id).startsWith('closing-')) return;
@@ -275,6 +331,7 @@ async function openTabContextMenu(event: MouseEvent, tab: TabItem): Promise<void
     ordered.slice(from, to).filter((item: TabItem) => item.closable !== false).length;
   const countLeft = targetIndex >= 0 ? countSide(0, targetIndex) : 0;
   const countRight = targetIndex >= 0 ? countSide(targetIndex + 1, ordered.length) : 0;
+  const collectionPayload = tabToCollectionPayload(tab);
 
   const result = await openContextMenu({
     x: event.clientX,
@@ -283,6 +340,13 @@ async function openTabContextMenu(event: MouseEvent, tab: TabItem): Promise<void
       { id: 'close', label: '关闭标签', icon: 'close', shortcut: 'Ctrl+W', disabled: tab.closable === false },
       { id: 'refresh', label: '刷新', icon: 'refresh', shortcut: 'F5' },
       { id: 'copy-link', label: '复制链接', icon: 'content_copy' },
+      {
+        id: 'add-collection',
+        label: '添加到集锦',
+        icon: 'collections_bookmark',
+        disabled: !collectionPayload,
+        children: collectionPayload ? collectionMenuChildren() : undefined
+      },
       { separator: true },
       { id: 'close-others', label: '关闭其他标签', icon: 'tab_unselected', disabled: countLeft + countRight === 0 },
       { id: 'close-left', label: '关闭左侧标签', icon: 'keyboard_double_arrow_left', disabled: countLeft === 0 },
@@ -290,6 +354,10 @@ async function openTabContextMenu(event: MouseEvent, tab: TabItem): Promise<void
     ]
   });
   if (!result) return;
+  if (result.id?.startsWith('add-collection:')) {
+    addTabToCollection(tab, result.id.slice('add-collection:'.length));
+    return;
+  }
   switch (result.id) {
     case 'close':
       handleDelete(tab);

@@ -10,6 +10,12 @@ export const useTabStore = defineStore('tabs', () => {
 
   const draggingTabId = ref<number | null>(null);
   const dragOffsetX = ref(0);
+  /** 标签拖拽悬停于左侧集锦头像栏时为 true（用于头像栏高亮，松手入集锦） */
+  const dragOverCollection = ref(false);
+  /** 正在拖拽标签（与集锦头像栏交互提示联动） */
+  const collectionDragActive = ref(false);
+  /** 当前被拖拽的标签是否可加入集锦（决定头像栏提示框/胶囊与禁止光标） */
+  const collectionDragEligible = ref(false);
 
   const visibleTabs = computed(() => {
     return [...tabs.value].sort((a, b) => a.position - b.position);
@@ -82,7 +88,7 @@ export const useTabStore = defineStore('tabs', () => {
 
   }
 
-  function updateTabMeta(key: string | number, meta: Partial<Pick<TabItem, 'title' | 'icon' | 'icon_invert' | 'renderKey'>>) {
+  function updateTabMeta(key: string | number, meta: Partial<Pick<TabItem, 'title' | 'icon' | 'icon_invert' | 'renderKey' | 'authorIcon'>>) {
     const tab = tabs.value.find(t => t.key === String(key));
     if (tab) {
       Object.assign(tab, meta);
@@ -187,6 +193,9 @@ export const useTabStore = defineStore('tabs', () => {
     currentTab,
     draggingTabId,
     dragOffsetX,
+    dragOverCollection,
+    collectionDragActive,
+    collectionDragEligible,
     addTab,
     switchTab,
     removeTab,

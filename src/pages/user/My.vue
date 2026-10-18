@@ -2,6 +2,7 @@
 import { ref, onMounted, inject, type Ref } from 'vue';
 import { getCurrentUserBduss, getCurrentUserCookies } from '@/services/user-manage';
 import { useApiStore } from '@/stores';
+import { useCollectionStore } from '@/stores/collection';
 import UserReply from '@/components/reply/UserReply.vue';
 import { replaceEmoticonsWithImages } from '@/utils/emoticon2code';
 import type { ReplyItem, AtItem, TiebaUser } from '@/types/user';
@@ -41,6 +42,7 @@ const hasMore = ref<boolean>(true);
 // API 实例
 const apiStore = useApiStore();
 const api = apiStore.getApi();
+const collectionStore = useCollectionStore();
 
 import { useShareCard, shareAvatarUrl, userUrl, stripHtml } from '@/services/share-card/useShareCard';
 const shareCard = useShareCard();
@@ -215,6 +217,11 @@ const history = (): void => {
           <RippleButton class="my-btn">
             <div class="button-content" @click="emit('openLibrary')"><span
                 class="material-symbols-outlined">inventory_2</span>归档
+            </div>
+          </RippleButton>
+          <RippleButton class="my-btn">
+            <div class="button-content" @click="collectionStore.toggleDrawer()"><span
+                class="material-symbols-outlined">collections_bookmark</span>集锦
             </div>
           </RippleButton>
           <RippleButton class="my-btn">

@@ -1,7 +1,7 @@
 <template>
   <transition name="fade">
-    <div v-if="visible" class="toast" :class="`toast`" @mouseenter="pauseTimer" @mouseleave="startTimer">
-      <div class="toast-content">
+    <div v-if="visible" class="toast" @mouseenter="pauseTimer" @mouseleave="startTimer">
+      <div class="toast-content dynamic-island-pill">
         <div class="toast-title">{{ title }}</div>
       </div>
 
@@ -69,16 +69,8 @@ defineExpose({
   pointer-events: none;
 }
 
+/* 外观走全局 .dynamic-island-pill，这里只保留 Toast 特有的布局/字号 */
 .toast-content {
-  padding: 10px 15px;
-  background-color: rgba(var(--background-color), 0.5);
-  backdrop-filter: blur(var(--blur-value));
-  border-radius: 4px;
-  box-shadow: 0 2px 12px rgba(var(--background-color), 0.1);
-  display: flex;
-  gap: 10px;
-  align-self: center;
-  align-items: center;
   font-size: 14px;
   pointer-events: auto;
 }

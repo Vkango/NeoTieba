@@ -13,12 +13,16 @@ declare module 'vue' {
   export interface GlobalComponents {
     Bar: typeof import('./components/user/Bar.vue')['default']
     BarInfoCard: typeof import('./components/user/BarInfoCard.vue')['default']
+    CollectionAvatar: typeof import('./components/collection/CollectionAvatar.vue')['default']
+    CollectionDrawer: typeof import('./components/layout/CollectionDrawer.vue')['default']
+    CollectionRail: typeof import('./components/layout/CollectionRail.vue')['default']
     Container: typeof import('./components/common/Container.vue')['default']
     ContextMenu: typeof import('./components/ui/ContextMenu.vue')['default']
     ContextMenuPanel: typeof import('./components/ui/ContextMenuPanel.vue')['default']
     Drawer: typeof import('./components/layout/Drawer.vue')['default']
     ErrorReport: typeof import('./components/notification/ErrorReport.vue')['default']
     ExternalLinkDialog: typeof import('./components/common/ExternalLinkDialog.vue')['default']
+    HorizontalMaskScroll: typeof import('./components/common/HorizontalMaskScroll.vue')['default']
     HotkeyHelp: typeof import('./components/common/HotkeyHelp.vue')['default']
     HotkeySettings: typeof import('./components/settings/HotkeySettings.vue')['default']
     ImageViewer: typeof import('./components/common/ImageViewer.vue')['default']
@@ -51,5 +55,6 @@ declare module 'vue' {
     UserManageCard: typeof import('./components/user/UserManageCard.vue')['default']
     UserReply: typeof import('./components/reply/UserReply.vue')['default']
     UserReplyContentDisplay: typeof import('./components/reply/UserReplyContentDisplay.vue')['default']
+    VerticalMaskScroll: typeof import('./components/common/VerticalMaskScroll.vue')['default']
   }
 }

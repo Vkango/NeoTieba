@@ -117,6 +117,8 @@ export interface TabItem {
     closable?: boolean;
     origin?: TabItem;
     if?: boolean;
+    /** 帖子页加载完成后记录的楼主头像（用于集锦条目头像） */
+    authorIcon?: string;
 }
 
 // User类型

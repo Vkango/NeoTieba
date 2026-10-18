@@ -128,6 +128,8 @@ const isMacOS = typeof navigator !== 'undefined'
 
 export const useSettingsStore = defineStore('settings', () => {
     const showUserId = ref(false);
+    /** 是否在左侧导航中展示集锦预览（关闭后仍可拖拽标签到左侧加入集锦） */
+    const showCollectionRail = ref(true);
     const onlyAuthor = ref(false);
     const noImage = ref(false);
     const mediaBlocks = ref(normalizeMediaBlocks());
@@ -159,6 +161,9 @@ export const useSettingsStore = defineStore('settings', () => {
         switch (key) {
             case 'show_user_id':
                 showUserId.value = value;
+                break;
+            case 'show_collection_rail':
+                showCollectionRail.value = Boolean(value);
                 break;
             case 'only_author':
                 onlyAuthor.value = value;
@@ -381,6 +386,7 @@ export const useSettingsStore = defineStore('settings', () => {
     return {
         // 显示设置
         showUserId,
+        showCollectionRail,
         onlyAuthor,
         noImage, mediaBlocks, mediaPolicy, isMediaBlocked, settingsError, wallpaperBusy,
         theme,
@@ -434,7 +440,7 @@ export const useSettingsStore = defineStore('settings', () => {
         },
 
         pick: [
-            'showUserId', 'onlyAuthor', 'noImage', 'mediaBlocks', 'theme', 'globalFont', 'accentMode', 'customAccentColor',
+            'showUserId', 'showCollectionRail', 'onlyAuthor', 'noImage', 'mediaBlocks', 'theme', 'globalFont', 'accentMode', 'customAccentColor',
             'wallpaperPath', 'wallpaperAccent', 'wallpaperBlur', 'wallpaperEffect', 'wallpaperSolidColor',
             'useProxy', 'proxyUrl', 'enableAutoSign', 'blockList',
             'threadSaveDefaults', 'archiveOnlineFallback',

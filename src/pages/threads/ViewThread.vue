@@ -534,7 +534,14 @@ const loadData = async (page = currentPage.value, replace = false, onlyAuthor = 
       else threadList.value.push(...added);
     }
     threadTitle.value = thread.title;
-    updateTabMeta?.({ key: props.key_, title: thread.title, icon: forum.avatar, icon_invert: false });
+    const authorPortrait = thread.author?.portrait;
+    updateTabMeta?.({
+      key: props.key_,
+      title: thread.title,
+      icon: forum.avatar,
+      icon_invert: false,
+      ...(authorPortrait ? { authorIcon: shareAvatarUrl(authorPortrait) } : {})
+    });
     if (replace) {
       await nextTick();
       containerRef.value?.scrollToTop();
