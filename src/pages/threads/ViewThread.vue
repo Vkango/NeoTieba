@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, onMounted, onBeforeUnmount, onActivated, watch, inject, provide, type Ref } from 'vue';
-import { useTabStore } from '@/stores/tabs';
 import { useApiStore, useSettingsStore, useUserStore } from '@/stores';
 import Container from '@/components/common/Container.vue';
 import { getCurrentUser } from '@/services/user-manage';
@@ -22,7 +21,6 @@ import ImageViewer from '@/components/common/ImageViewer.vue';
 import Reply from '@/components/thread/Reply.vue';
 import ThreadFloorIndex from '@/components/thread/ThreadFloorIndex.vue';
 import { findReadingFloor, floorPreview } from '@/utils/thread-index';
-import ReplyView from '@/components/thread/SubPostView.vue';
 import { useShareCard, threadUrl, shareAvatarUrl, formatCardDate } from '@/services/share-card/useShareCard';
 import { formatNumber } from '@/utils/helper';
 import type { ContentElement } from '@/types/common';
@@ -93,26 +91,8 @@ interface ThreadData {
   };
 }
 
-interface SubPostInfo {
-  ip_address?: string;
-  like: number;
-  user_name: string;
-  uid: string | number;
-  avatar: string;
-  thread_content: any[];
-  create_time: number;
-  reply_num: number;
-  tid: string;
-  pid: string | number;
-  floor: number;
-  is_lz: boolean;
-  level?: number;
-  local?: boolean;
-}
-
 // Props & Emits
 const props = defineProps<Props>();
-const tabStore = useTabStore();
 const emit = defineEmits<Emits>();
 
 // Injects
@@ -374,20 +354,6 @@ const totalPages = computed(() => {
 });
 const threadTitle = ref<string>("");
 const loadError = ref('');
-const isSubPostCardOpen = ref(false);
-const currentSubPostInfo: Ref<SubPostInfo> = ref({
-  like: 0,
-  user_name: '',
-  uid: '',
-  avatar: '',
-  thread_content: [],
-  create_time: 0,
-  reply_num: 0,
-  tid: String(props.tid),
-  pid: 0,
-  floor: 0,
-  is_lz: false
-});
 
 const openImageViewer = inject<(url: string) => void>('openImageViewer');
 const captureRef = ref<HTMLElement | null>(null);
@@ -748,12 +714,6 @@ const openBar = (barName: string): void => {
 const nextPage = async (): Promise<void> => {
   await loadData(currentPage.value + 1);
 };
-
-// 查看所有回复
-const ViewAllReplie = (data: SubPostInfo): void => {
-  currentSubPostInfo.value = data;
-  isSubPostCardOpen.value = true;
-};
 </script>
 
 <template>
@@ -869,40 +829,13 @@ const ViewAllReplie = (data: SubPostInfo): void => {
                   :thread_content="item.content?.length === 0 || !Array.isArray(item.content) ? [{ type: 0, text: threadTitle }] : item.content"
                   :create_time="item.time" :reply_num="Number(item.sub_post_number || 0)" :tid="String(tid)"
                   :pid="String(item.id)" :floor="item.floor" :is_lz="String(item.author_id) === threadAuthorId"
-                  :level="item.author?.level_id || 0" :ip_address="item.author?.ip_address || ''" :local="props.local"
-                  @viewAllReplies="ViewAllReplie">
+                  :level="item.author?.level_id || 0" :ip_address="item.author?.ip_address || ''" :local="props.local">
                 </Reply>
               </div>
             </div>
 
           </div>
         </transition>
-        <Teleport to="body">
-          <Transition name="subpost-modal">
-            <div v-if="isSubPostCardOpen && tabStore.activeKey === String(props.key_)" class="subpost-overlay"
-              @click.self="isSubPostCardOpen = false">
-              <Transition name="subpost-card" appear>
-                <section v-if="isSubPostCardOpen" class="subpost-card" role="dialog" aria-modal="true"
-                  aria-label="查看楼中楼" @click.stop>
-                  <div class="subpost-card-header">
-                    <span>查看楼中楼</span>
-                    <RippleButton class="subpost-card-close" @click="isSubPostCardOpen = false" aria-label="关闭楼中楼">
-                      <img src="/assets/close.svg" alt="" />
-                    </RippleButton>
-                  </div>
-                  <div class="subpost-card-content">
-                    <ReplyView :key="`${currentSubPostInfo.tid}-${currentSubPostInfo.pid}`" v-bind="currentSubPostInfo"
-                      :forum-name="returnData.data?.forum?.name" :forum-avatar="returnData.data?.forum?.avatar"
-                      :thread-title="threadTitle"
-                      :thread-author="returnData.data?.thread?.author?.name_show || returnData.data?.thread?.author?.user_name || ''"
-                      :thread-author-avatar="shareAvatarUrl(returnData.data?.thread?.author?.portrait)"
-                      @openUser="onUserNameClicked($event)"></ReplyView>
-                  </div>
-                </section>
-              </Transition>
-            </div>
-          </Transition>
-        </Teleport>
         <transition name="fade1">
           <div v-if="loadError && !threadList.length" style="width: 100%; height: 100%; overflow-y: auto; overflow-x: hidden; border-radius: 5px;
           justify-content: center; text-align: center; display: flex; flex-direction: column; align-items: center;
@@ -1409,87 +1342,6 @@ const ViewAllReplie = (data: SubPostInfo): void => {
 
 .jump-buttons button[type="submit"] {
   background: rgba(var(--primary-color), 0.3);
-}
-
-.subpost-overlay {
-  position: fixed;
-  inset: 0;
-  /* Keep the comment dialog above the app tabs and custom titlebar. */
-  z-index: 3200;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 20px;
-  background: rgba(0, 0, 0, 0.4);
-}
-
-.subpost-card {
-  width: 600px;
-  max-width: 100%;
-  height: 88vh;
-  max-height: 100%;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  background: rgba(var(--background-color), 1);
-  border: 1px solid rgba(var(--text-color), 0.1);
-  border-radius: 12px;
-  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.15);
-}
-
-.subpost-card-header {
-  flex-shrink: 0;
-  height: 50px;
-  padding-left: 15px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  font-size: 13px;
-  color: rgba(var(--text-color), 1);
-}
-
-.subpost-card-close {
-  width: 46px;
-  height: 46px;
-  padding: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: transparent;
-  box-shadow: none;
-  border-radius: 0;
-}
-
-.subpost-card-close img {
-  width: 20px;
-  height: 20px;
-  opacity: 0.7;
-  filter: invert(var(--invert));
-}
-
-.subpost-card-content {
-  flex: 1;
-  min-height: 0;
-  overflow: hidden;
-}
-
-.subpost-modal-enter-active,
-.subpost-modal-leave-active {
-  transition: opacity 0.3s ease;
-}
-
-.subpost-modal-enter-from,
-.subpost-modal-leave-to {
-  opacity: 0;
-}
-
-.subpost-card-enter-active {
-  transition: opacity 0.3s ease, transform 0.3s ease;
-}
-
-.subpost-card-enter-from {
-  opacity: 0;
-  transform: scale(0.9) translateY(20px);
 }
 
 .thread-title {

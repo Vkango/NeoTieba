@@ -311,7 +311,6 @@ button:active {
     font-size: 13px;
     gap: 10px;
     transition: background-color 0.3s ease;
-    background-color: rgba(var(--text-color), 0.02);
 }
 
 .thread .avatar {

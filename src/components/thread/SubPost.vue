@@ -1,13 +1,15 @@
 <template>
   <div class="subpost-1">
-    <div class="user-info" @click="emit('openUser', props.uid)">
-      <div class="avatar"><RemoteImage kind="avatars" class="avatar"
-          :src="'https://gss0.bdstatic.com/6LZ1dD3d1sgCo2Kml5_Y_D3/sys/portrait/item/' + avatar" /></div>
-      <div class="user-name">{{ user_name }}<small v-if="settings.showUserId && props.uid && String(props.uid) !== '0'"> · UID {{ props.uid }}</small></div>
+    <div class="avatar">
+      <RemoteImage kind="avatars" class="avatar"
+        :src="'https://gss0.bdstatic.com/6LZ1dD3d1sgCo2Kml5_Y_D3/sys/portrait/item/' + avatar" />
     </div>
     <div class="subpost-preview">
-      <div class="thread-content" @click="handleClick" @error.capture="archiveFallback" v-html="content">
-      </div>
+      <span class="user-name" @click="emit('openUser', props.uid)">{{ user_name }}<small
+          v-if="settings.showUserId && props.uid && String(props.uid) !== '0'">
+          · UID {{ props.uid }}</small></span>：<span class="thread-content" @click="handleClick"
+        @error.capture="archiveFallback" v-html="content">
+      </span>
     </div>
   </div>
 </template>
@@ -57,12 +59,6 @@ const props = defineProps({
 })
 </script>
 <style scoped>
-.subpost-1 {
-  border-radius: 8px;
-  display: flex;
-  flex-direction: column;
-}
-
 .subpost-1 .avatar {
   width: 30px;
   height: 30px;
@@ -72,18 +68,19 @@ const props = defineProps({
 
 .subpost-1 {
   box-sizing: border-box;
-  padding: 8px 15px;
-  display: flex;
-  flex-direction: column;
+  padding: 8px 0;
+  display: flow-root;
   border-radius: 8px;
   font-size: 13px;
-  gap: 10px;
+}
+
+.subpost-1>.avatar {
+  float: left;
+  margin-right: 10px;
 }
 
 .subpost-preview {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+  display: flow-root;
 }
 
 .subpost-preview .thread-title {
@@ -91,9 +88,13 @@ const props = defineProps({
   font-size: 16px;
 }
 
-.user-info {
-  display: flex;
-  gap: 10px;
-  align-items: center;
+.subpost-preview :deep(.emoticon) {
+  width: auto;
+  height: 1lh;
+  vertical-align: middle;
+}
+
+.user-name {
+  cursor: pointer;
 }
 </style>

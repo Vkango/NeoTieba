@@ -1,5 +1,5 @@
 <template>
-  <div class="thread" data-kb-item @click.stop>
+  <div class="thread" ref="floorEl" data-kb-item @click.stop>
     <div class="user-info" @click="openUser(props.uid as string | number)">
       <div class="avatar">
         <RemoteImage kind="avatars" class="avatar"
@@ -22,7 +22,14 @@
       <div ref="contentElement" class="thread-content" v-html="content" style="user-select: text;" @click="handleClick"
         @error.capture="handleImageError">
       </div>
-      <div class="thread-info">
+      <div ref="stickySentinel" class="sticky-sentinel" aria-hidden="true"></div>
+      <div class="thread-info" :class="{ frozen: expanded, stuck }">
+        <span v-if="reply_num > 0" class="reply-entry" role="button"
+          :aria-expanded="reply_num > 5 ? expanded : undefined" @click.stop="toggleExpanded">
+          <span class="material-symbols-outlined" style="font-size: 16px;">forum</span>
+          <span>{{ reply_num }} 回复</span>
+          <span v-if="expanded" class="material-symbols-outlined" style="font-size: 16px;">keyboard_arrow_up</span>
+        </span>
         <span class="material-symbols-outlined" style="font-size: 16px;">location_on</span>{{ ip_address }}
         <span style="cursor: pointer; margin-left: 10px; display: flex; align-items: center;"
           @click.stop="handleShare"><span class="material-symbols-outlined"
@@ -30,20 +37,12 @@
         <span class="material-symbols-outlined" style="font-size: 16px; margin-left: 10px;">thumb_up</span> {{ like }} 赞
 
         <span class="material-symbols-outlined" style="font-size: 16px; margin-left: 10px;">floor</span> {{ floor }} 楼
-        <span class="material-symbols-outlined" style="font-size: 16px; margin-left: 10px;"
-          v-if="reply_num > 0">forum</span> <span v-if="reply_num > 0">{{ reply_num }} 回复</span>
 
       </div>
-      <div class="subpost" v-if="reply_num > 0">
-        <SubPost v-for="item in subpost_list" :thread_content="item.content" :embedded-images="props.embeddedImages"
-          @openUser="openUser" @select-image="handleSubpostImage" :avatar="item.author.portrait" :uid="item.author.id"
-          :user_name="item.author.name_show || item.author.name">
-        </SubPost>
-        <RippleButton v-if="reply_num > 5" @click="emit('viewAllReplies', props)"
-          style="box-sizing: border-box; margin: 5px 15px; background-color: transparent; box-shadow: none; width: fit-content;">
-          查看全部 {{ reply_num }} 条回复
-        </RippleButton>
-      </div>
+      <SubPostView v-if="reply_num > 0" :tid="tid" :pid="pid" :reply_num="reply_num" :local="local"
+        :embedded-images="props.embeddedImages" :expanded="expanded" @openUser="openUser"
+        @select-image="handleSubpostImage" @register-images="urls => emit('registerImages', urls)">
+      </SubPostView>
     </div>
   </div>
 </template>
@@ -51,18 +50,14 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { useSettingsStore } from '@/stores/settings';
-import { useUserStore } from '@/stores/user';
 const settings = useSettingsStore();
-const userStore = useUserStore();
 const blocked = computed(() => ({ avatars: settings.isMediaBlocked('avatars'), images: settings.isMediaBlocked('images'), videos: settings.isMediaBlocked('videos'), audio: settings.isMediaBlocked('audio') }));
-import { onMounted, ref, inject, nextTick } from 'vue';
-import { useApiStore } from '@/stores';
+import { onMounted, onBeforeUnmount, ref, inject, nextTick } from 'vue';
 import { fetchImage } from '@/core/request';
 import { normalizeMediaUrl } from '@/utils/settings-policy';
 import { watch } from 'vue';
-import { archiveViewSubPost } from '@/core/archive';
 import { useOfflineMedia, useArchiveFallback, isArchiveUrl } from '@/composables/useOfflineMedia';
-import SubPost from './SubPost.vue';
+import SubPostView from './SubPostView.vue';
 import { useShareCard, threadUrl, shareAvatarUrl, formatCardDate } from '@/services/share-card/useShareCard';
 import { getTimeInterval, processContentElements } from '@/utils/helper';
 import type { ContentElement } from '@/types/common';
@@ -100,7 +95,6 @@ const emit = defineEmits<{
   (e: 'openUser', uid: string | number): void;
   (e: 'selectImage', url: string): void;
   (e: 'registerImages', urls: string[]): void;
-  (e: 'viewAllReplies', data: Props): void;
 }>();
 
 const openImageViewer = inject<((url: string) => void) | undefined>('openImageViewer');
@@ -108,11 +102,35 @@ const offlineMedia = useOfflineMedia();
 const archiveFallback = useArchiveFallback();
 const content = computed(() => processContentElements(props.thread_content as ContentElement[], false, blocked.value, offlineMedia));
 const contentElement = ref<HTMLElement | null>(null);
-const subpost_list = ref<any[]>([])
+const floorEl = ref<HTMLElement | null>(null);
+const stickySentinel = ref<HTMLElement | null>(null);
+const expanded = ref(false);
+const stuck = ref(false);
+let stuckObserver: IntersectionObserver | null = null;
 
 const openUser = (uid: string | number) => {
-  emit('openUser', uid);
+  emit('openUser', uid)
 }
+
+// 展开/收起：SubPostView 常驻挂载，自行加载数据；这里只切换 expanded 状态。
+// 收起时先把原始操作区恢复到可视区域，避免页面高度骤变导致迷失位置。
+// 锚点用 sticky 哨兵（thread-info 冻结时 getBoundingClientRect 是吸附位置，不是自然位置）
+const toggleExpanded = () => {
+  if (props.reply_num <= 5) return;
+  if (expanded.value) {
+    const container = floorEl.value?.closest('.component-container');
+    const anchor = stickySentinel.value;
+    if (container && anchor) {
+      const rect = anchor.getBoundingClientRect();
+      const crect = container.getBoundingClientRect();
+      if (rect.top < crect.top || rect.top > crect.bottom) {
+        const top = Math.max(0, container.scrollTop + rect.top - crect.top - 12);
+        container.scrollTo({ top, behavior: 'instant' });
+      }
+    }
+  }
+  expanded.value = !expanded.value;
+};
 
 const handleClick = (event: any) => {
   if (event.target instanceof HTMLImageElement && event.target.classList.contains('thread-reply-img')) {
@@ -155,14 +173,6 @@ const handleShare = () => {
     qrUrl: threadUrl(props.tid, props.pid)
   });
 };
-const registerSubpostImages = (items: any[]) => {
-  const urls = items.flatMap(item => (Array.isArray(item?.content) ? item.content : [])
-    .filter((part: any) => Number(part?.type) === 3 || Number(part?.type) === 20)
-    .map((part: any) => part.bigCdnSrc || part.big_cdn_src || part.bigSrc || part.big_src || part.originSrc || part.origin_src)
-    .filter((url: unknown): url is string => typeof url === 'string' && !!url));
-  if (urls.length) emit('registerImages', urls);
-};
-
 const handleImageError = async (event: Event): Promise<void> => {
   const image = event.target as HTMLImageElement;
   if (blocked.value.images || !image.isConnected) return;
@@ -206,45 +216,70 @@ watch(content, () => { void preloadBigCdnImages(); });
 
 onMounted(async () => {
   await preloadBigCdnImages();
-  if (props.reply_num > 0) {
-    const loadSubPost = (async () => {
-      if (props.local) {
-        try {
-          return await archiveViewSubPost(props.tid, props.pid, 1);
-        } catch (error) {
-          // 楼中楼未归档（保存时未开启楼中楼等）：按设置联网补取。
-          if (!settings.archiveOnlineFallback) throw error;
-          console.info(`楼中楼 ${props.pid} 未归档，联网获取`, error);
-          const apiStore = useApiStore();
-          return apiStore.getApi().viewSubPost(props.tid, props.pid, 1, userStore.currentUser?.bduss ?? '', userStore.currentUser?.stoken ?? '');
-        }
-      }
-      const apiStore = useApiStore();
-      const Api = apiStore.getApi();
-      return Api.viewSubPost(props.tid, props.pid, 1, userStore.currentUser?.bduss ?? '', userStore.currentUser?.stoken ?? '');
-    })();
-    loadSubPost.then((res: any) => {
-      subpost_list.value = res.subpost_list;
-      registerSubpostImages(subpost_list.value);
-      if (subpost_list.value.length > 5) {
-        subpost_list.value = subpost_list.value.slice(0, 5);
-      }
-    }).catch((error: unknown) => {
-      console.warn('楼中楼加载失败:', error);
-    });
-  }
+
+  // 冻结状态检测：哨兵离开可视区顶部 => thread-info 吸附
+  const root = stickySentinel.value?.closest('.component-container') as HTMLElement | null;
+  stuckObserver = new IntersectionObserver((entries) => {
+    stuck.value = !entries[0].isIntersecting;
+  }, { root, threshold: 0 });
+  if (stickySentinel.value) stuckObserver.observe(stickySentinel.value);
+})
+
+onBeforeUnmount(() => {
+  stuckObserver?.disconnect();
+  stuckObserver = null;
 })
 
 </script>
 <style scoped>
-.subpost {
+.sticky-sentinel {
+  height: 1px;
+  margin-top: -1px;
+}
+
+.reply-entry {
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  user-select: none;
+}
+
+.reply-entry {
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 5px;
+  margin-top: -2px;
+  margin-bottom: -2px;
+  border-radius: 5px;
+  user-select: none;
+  transition: background-color 0.3s ease;
+}
+
+.reply-entry:hover {
+  background-color: rgba(var(--text-color), 0.1);
+}
+
+/* 展开时冻结原始操作栏：负 margin 抵消 padding，静止时不产生布局位移；宽度适配内容。
+   注意 opacity < 1 会把 backdrop-filter 的模糊结果一并半透明化导致模糊出错，
+   因此冻结时元素本身保持不透明，改用 color 把内容调回原有观感 */
+.thread-info.frozen {
+  position: sticky;
+  top: 16px;
+  z-index: 2;
+  margin: -5px -10px;
+  padding: 5px 10px;
   border-radius: 8px;
-  display: flex;
-  flex-direction: column;
-  background-color: rgba(var(--text-color), 0.02);
-  gap: 8px;
-  border: 1px solid rgba(var(--text-color), 0.03);
-  margin-bottom: 10px;
+  opacity: 1;
+  color: rgba(var(--text-color), 0.5);
+}
+
+/* 吸附后只做背景模糊 + 极淡底色，避免与滚动内容叠印且不干扰阅读 */
+.thread-info.frozen.stuck {
+  background: rgba(var(--background-color), 0.25);
+  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(20px);
 }
 
 .thread-info {
@@ -252,6 +287,7 @@ onMounted(async () => {
   gap: 5px;
   opacity: 0.5;
   align-items: center;
+  width: fit-content;
 }
 
 .thread-media {
@@ -265,6 +301,7 @@ onMounted(async () => {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  padding-left: 45px;
 }
 
 .thread-preview .thread-title {

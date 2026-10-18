@@ -1,102 +1,50 @@
 <template>
-  <Container @yscroll="onScroll" style="background-color: transparent;">
-    <div class="thread" @click.stop>
-      <div class="user-info" @click="openUser(props.uid)">
-        <div class="avatar">
-          <RemoteImage kind="avatars" class="avatar"
-            :src="'https://gss0.bdstatic.com/6LZ1dD3d1sgCo2Kml5_Y_D3/sys/portrait/item/' + avatar" />
-        </div>
-        <div>
-          <div class="user-name">{{ user_name }}<small
-              v-if="settings.showUserId && props.uid && String(props.uid) !== '0'"> · UID {{ props.uid }}</small><span
-              class="level"
-              :class="{ 'color1': (level || 0) >= 0 && (level || 0) < 4, 'color2': (level || 0) >= 4 && (level || 0) < 10, 'color3': (level || 0) >= 10 && (level || 0) < 16, 'color4': (level || 0) >= 16 }">{{
-                level || 0 }} {{ is_lz ? '楼主' : '' }}</span>
-          </div>
-          <div class="desc">{{ getTimeInterval(props.create_time * 1000) }}</div>
-        </div>
-
-
+  <div class="subpost" :class="{ 'preview-fade': reply_num > 5 && !expanded }">
+    <SubPost v-for="item in baseList" :key="subpostKey(item)" :thread_content="item.content"
+      @openUser="uid => emit('openUser', uid)" @select-image="onSubpostImage" :avatar="item.author.portrait"
+      :uid="item.author.id" :user_name="item.author.name_show || item.author.name">
+    </SubPost>
+    <div v-if="extraList.length && renderExtras" class="subpost-expand-wrap"
+      :class="{ expanded: props.expanded, opening }">
+      <div class="subpost-expand-panel">
+        <SubPost v-for="item in extraList" :key="subpostKey(item)" :thread_content="item.content"
+          @openUser="uid => emit('openUser', uid)" @select-image="onSubpostImage" :avatar="item.author.portrait"
+          :uid="item.author.id" :user_name="item.author.name_show || item.author.name">
+        </SubPost>
       </div>
-      <div class="thread-preview">
-        <div class="thread-content" v-html="content" style="user-select: text;" @click="handleClick"
-          @error.capture="archiveFallback">
-        </div>
-        <div class="thread-info">
-          <span style="cursor: pointer; margin-left: 10px; display: flex; align-items: center;"
-            @click.stop="handleShare"><span class="material-symbols-outlined"
-              style="font-size: 16px;">share</span>&nbsp;分享</span>
-          <span class="material-symbols-outlined" style="font-size: 16px; margin-left: 10px;">thumb_up</span> {{ like }}
-          赞
-          <span class="material-symbols-outlined" style="font-size: 16px; margin-left: 10px;">floor</span> {{ floor }} 楼
-          <span class="material-symbols-outlined" style="font-size: 16px; margin-left: 10px;"
-            v-if="reply_num > 0">forum</span> <span v-if="reply_num > 0">{{ reply_num }} 回复</span>
-
-        </div>
-        <div class="subpost" v-if="reply_num > 0">
-          <SubPost v-for="item in subpost_list" :thread_content="item.content" @openUser="openUser"
-            @select-image="openImageViewer" :avatar="item.author.portrait" :uid="item.author.id"
-            :user_name="item.author.name_show || item.author.name">
-          </SubPost>
-        </div>
-
-      </div>
-      <transition name="fade1">
-        <Loading class="loading-box" v-if="isThreadsLoading"></Loading>
-      </transition>
     </div>
-  </Container>
+    <div ref="bottomRef" class="load-sentinel" aria-hidden="true"></div>
+  </div>
+  <Teleport to="body">
+    <transition name="fade1">
+      <Loading v-if="isLoading && currentPage > 0" class="subpost-loading-pill"></Loading>
+    </transition>
+  </Teleport>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue';
-import { useSettingsStore } from '@/stores/settings';
-const settings = useSettingsStore();
-const blocked = computed(() => ({ avatars: settings.isMediaBlocked('avatars'), images: settings.isMediaBlocked('images'), videos: settings.isMediaBlocked('videos'), audio: settings.isMediaBlocked('audio') }));
-import { onMounted, ref, type Ref } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch, type Ref } from 'vue';
 import SubPost from './SubPost.vue';
-import { useShareCard, threadUrl, shareAvatarUrl, formatCardDate } from '@/services/share-card/useShareCard';
-import { getTimeInterval, processContentElements } from '@/utils/helper';
-import { useSendToast, useImageViewer } from '@/composables/useGlobalProvides';
+import Loading from '@/components/common/Loading.vue';
+import { useSettingsStore } from '@/stores/settings';
 import { useApi } from '@/composables/useApi';
 import { useUserStore } from '@/stores/user';
 import { archiveViewSubPost } from '@/core/archive';
-import { useOfflineMedia, useArchiveFallback } from '@/composables/useOfflineMedia';
+import { useImageViewer } from '@/composables/useGlobalProvides';
 
-// 类型定义
 interface Props {
-  avatar: string;
-  uid: string | number;
-  user_name: string;
-  thread_content: unknown[];
-  like: number;
-  is_lz: boolean;
-  create_time: number;
-  reply_num: number;
   tid: string;
   pid: string | number;
-  floor: number;
-  level?: number;
+  reply_num: number;
   local?: boolean;
-  forumName?: string;
-  forumAvatar?: string;
-  threadTitle?: string;
-  threadAuthor?: string;
-  threadAuthorAvatar?: string;
-}
-
-interface Emits {
-  (e: 'openUser', uid: string | number): void;
-}
-
-interface ContentElement {
-  type: number;
-  text?: string;
-  c?: string;
-  [key: string]: unknown;
+  embeddedImages?: boolean;
+  /** 是否展开：折叠时只显示前 5 条，展开后显示全部并按需分页 */
+  expanded?: boolean;
 }
 
 interface SubPostItem {
+  pid?: string | number;
+  post_id?: string | number;
   author: {
     id: string | number;
     name: string;
@@ -107,146 +55,141 @@ interface SubPostItem {
   [key: string]: unknown;
 }
 
-interface PageInfo {
-  current_page: number;
-  total_page: number;
-  total_count: number;
+interface Emits {
+  (e: 'openUser', uid: string | number): void;
+  (e: 'selectImage', url: string): void;
+  (e: 'registerImages', urls: string[]): void;
 }
 
-// Props & Emits
 const props = defineProps<Props>();
 const emit = defineEmits<Emits>();
 
-// Composables
-const sendToast = useSendToast();
-const openImageViewer = useImageViewer();
+const settings = useSettingsStore();
 const api = useApi();
 const userStore = useUserStore();
-const offlineMedia = useOfflineMedia();
-const archiveFallback = useArchiveFallback();
+const openImageViewer = useImageViewer();
 
-// State
 const subpost_list: Ref<SubPostItem[]> = ref<SubPostItem[]>([]);
-const currentPage: Ref<number> = ref<number>(1);
-const isThreadsLoading: Ref<boolean> = ref<boolean>(false);
-const content = computed(() => processContentElements(props.thread_content as ContentElement[], false, blocked.value, offlineMedia));
-const create_time1: Ref<string> = ref<string>('');
-let pageInfo: PageInfo | null = null;
+const isLoading: Ref<boolean> = ref<boolean>(false);
+const bottomRef = ref<HTMLElement | null>(null);
+// 多余条目的 DOM 只在展开期间存在：收起动画结束后即卸载，不为未展开的楼中楼保留内存
+const renderExtras = ref(false);
+const opening = ref(false);
+let currentPage = 0;
+let totalPages = 1;
+let observer: IntersectionObserver | null = null;
+let expandTimer: number | undefined;
+let collapseTimer: number | undefined;
 
-// Methods
-const openUser = (uid: string | number): void => {
-  emit('openUser', uid);
+// 前 5 条始终可见（折叠态），其余条目收纳在可展开区域内；组件常驻，数据不因展开收缩而清空
+const baseList = computed(() => subpost_list.value.slice(0, 5));
+const extraList = computed(() => subpost_list.value.slice(5));
+
+const subpostKey = (item: SubPostItem): string => String(item.pid ?? item.post_id ?? '');
+
+const onSubpostImage = (url: string): void => {
+  if (props.embeddedImages) emit('selectImage', url);
+  else openImageViewer(url);
 };
 
-const shareCard = useShareCard();
-const handleShare = (): void => {
-  shareCard({
-    title: props.user_name,
-    subtitle: `第 ${props.floor} 楼`,
-    avatar: shareAvatarUrl(props.avatar),
-    meta: formatCardDate(props.create_time),
-    inline: true,
-    contentElements: props.thread_content as ContentElement[],
-    stats: [
-      { label: '赞', value: props.like },
-      { label: '回复', value: props.reply_num }
-    ],
-    source: (props.threadTitle || props.threadAuthor) ? {
-      title: props.threadTitle,
-      author: props.threadAuthor,
-      authorAvatar: props.threadAuthorAvatar,
-      barName: props.forumName,
-      barAvatar: props.forumAvatar
-    } : undefined,
-    qrUrl: threadUrl(props.tid, props.pid)
-  });
-};
-
-const onScroll = (target: { scrollTop: number; clientHeight: number; scrollHeight: number }): void => {
-  if ((target.scrollTop + target.clientHeight + 20 >= target.scrollHeight)) {
-    if (isThreadsLoading.value) {
-      return;
+const fetchPage = async (page: number): Promise<Record<string, any>> => {
+  if (props.local) {
+    try {
+      return await archiveViewSubPost(props.tid, props.pid, page);
+    } catch (error) {
+      // 楼中楼未归档（保存时未开启楼中楼等）：按设置联网补取。
+      if (!settings.archiveOnlineFallback) throw error;
+      console.info(`楼中楼 ${props.pid} 第 ${page} 页未归档，联网获取`, error);
+      return await api.viewSubPost(props.tid, props.pid, page, userStore.currentUser?.bduss ?? '', userStore.currentUser?.stoken ?? '');
     }
-    if (pageInfo && pageInfo.current_page >= pageInfo.total_page) {
-      sendToast('没有更多回复了', 2000);
-      return;
-    }
-    nextPage();
   }
+  return await api.viewSubPost(props.tid, props.pid, page, userStore.currentUser?.bduss ?? '', userStore.currentUser?.stoken ?? '');
 };
 
-const nextPage = async (): Promise<void> => {
+const registerImages = (items: SubPostItem[]): void => {
+  const urls = items.flatMap(item => (Array.isArray(item?.content) ? item.content : [])
+    .filter((part: any) => Number(part?.type) === 3 || Number(part?.type) === 20)
+    .map((part: any) => part.bigCdnSrc || part.big_cdn_src || part.bigSrc || part.big_src || part.originSrc || part.origin_src)
+    .filter((url: unknown): url is string => typeof url === 'string' && !!url));
+  if (urls.length) emit('registerImages', urls);
+};
+
+// 楼中楼自身的底部哨兵是否接近可视区域（整体滚动位置不可靠：那是整个楼层的底部）
+const isSentinelNearViewport = (): boolean => {
+  const el = bottomRef.value;
+  if (!el) return false;
+  const rect = el.getBoundingClientRect();
+  const crect = el.closest('.component-container')?.getBoundingClientRect();
+  const bottom = crect ? crect.bottom : window.innerHeight;
+  return rect.top < bottom + 120;
+};
+
+const loadNext = async (): Promise<void> => {
+  if (isLoading.value) return;
+  isLoading.value = true;
   try {
-    currentPage.value++;
-    await loadData();
-  } catch (error) {
-    console.error('加载下一页失败:', error);
-  }
-};
-
-const handleClick = (event: MouseEvent): void => {
-  const target = event.target as HTMLElement;
-  if (target.classList.contains('thread-reply-img')) {
-    const src = target.getAttribute('data-full-src') || (target as HTMLImageElement).src;
-    if (src) {
-      openImageViewer(src);
-    }
-  }
-  if (target.classList.contains('at-button')) {
-    const uid = target.getAttribute('uid');
-    if (uid) {
-      emit('openUser', uid);
-    }
-  }
-};
-
-const loadData = async (): Promise<void> => {
-  try {
-    isThreadsLoading.value = true;
-    let res: Record<string, any>;
-    if (props.local) {
-      try {
-        res = await archiveViewSubPost(props.tid, props.pid, currentPage.value);
-      } catch (error) {
-        // 楼中楼未归档（保存时未开启楼中楼等）：按设置联网补取。
-        if (!settings.archiveOnlineFallback) throw error;
-        console.info(`楼中楼 ${props.pid} 第 ${currentPage.value} 页未归档，联网获取`, error);
-        res = await api.viewSubPost(props.tid, props.pid, currentPage.value, userStore.currentUser?.bduss ?? '', userStore.currentUser?.stoken ?? '');
-      }
-    } else {
-      res = await api.viewSubPost(props.tid, props.pid, currentPage.value, userStore.currentUser?.bduss ?? '', userStore.currentUser?.stoken ?? '');
-    }
-    subpost_list.value = [...subpost_list.value, ...res.subpost_list];
-    pageInfo = res.page;
+    const next = currentPage + 1;
+    const res = await fetchPage(next);
+    const items: SubPostItem[] = res.subpost_list || [];
+    subpost_list.value = next === 1 ? items : [...subpost_list.value, ...items];
+    currentPage = next;
+    const totalPage = Number(res.page?.total_page || res.page?.current_page || 1);
+    if (Number.isInteger(totalPage) && totalPage > 0) totalPages = totalPage;
+    registerImages(items);
   } catch (error) {
     console.error('加载楼中楼失败:', error);
   } finally {
-    isThreadsLoading.value = false;
+    isLoading.value = false;
   }
 };
 
-function formatDate(timestamp: number): string {
-  const date = new Date(timestamp * 1000);
-  const yyyy = date.getFullYear();
-  const mm = String(date.getMonth() + 1).padStart(2, "0");
-  const dd = String(date.getDate()).padStart(2, "0");
-  const hh = String(date.getHours()).padStart(2, "0");
-  const minute = String(date.getMinutes()).padStart(2, "0");
-  const ss = String(date.getSeconds()).padStart(2, "0");
-  return `${yyyy}/${mm}/${dd} ${hh}:${minute}:${ss}`;
-}
+const tryLoadMore = async (): Promise<void> => {
+  if (!props.expanded || isLoading.value || currentPage >= totalPages) return;
+  if (!isSentinelNearViewport()) return;
+  await loadNext();
+  // 追加后哨兵可能仍停留在可视区域内，继续补加载直到填满一屏或没有更多
+  await nextTick();
+  await tryLoadMore();
+};
 
-onMounted(async (): Promise<void> => {
-  try {
-    create_time1.value = formatDate(props.create_time);
-    if (props.reply_num > 0) {
-      await loadData();
-    }
-  } catch (error) {
-    console.error('组件初始化失败:', error);
-  } finally {
-    isThreadsLoading.value = false;
+onMounted(() => {
+  const root = bottomRef.value?.closest('.component-container') as HTMLElement | null;
+  observer = new IntersectionObserver((entries) => {
+    if (entries.some(entry => entry.isIntersecting)) void tryLoadMore();
+  }, { root, rootMargin: '120px 0px' });
+  if (bottomRef.value) observer.observe(bottomRef.value);
+  if (props.reply_num > 0) void loadNext();
+});
+
+// 展开：挂载多余条目并用 keyframes 动画展开（首次插入无法触发 transition）；
+// 收起：先播放收缩过渡，动画结束后卸载多余条目释放内存
+watch(() => props.expanded, (val) => {
+  if (collapseTimer) {
+    window.clearTimeout(collapseTimer);
+    collapseTimer = undefined;
   }
+  if (val) {
+    if (expandTimer) window.clearTimeout(expandTimer);
+    renderExtras.value = true;
+    opening.value = true;
+    expandTimer = window.setTimeout(() => {
+      opening.value = false;
+      expandTimer = undefined;
+    }, 260);
+    void tryLoadMore();
+  } else {
+    collapseTimer = window.setTimeout(() => {
+      renderExtras.value = false;
+      collapseTimer = undefined;
+    }, 260);
+  }
+});
+
+onBeforeUnmount(() => {
+  observer?.disconnect();
+  observer = null;
+  if (expandTimer) window.clearTimeout(expandTimer);
+  if (collapseTimer) window.clearTimeout(collapseTimer);
 });
 </script>
 <style scoped>
@@ -254,39 +197,61 @@ onMounted(async (): Promise<void> => {
   border-radius: 8px;
   display: flex;
   flex-direction: column;
-  background-color: rgba(var(--text-color), 0.02);
   gap: 8px;
-  border: 1px solid rgba(var(--text-color), 0.03);
   margin-bottom: 10px;
 }
 
-.thread {
-  width: 100%;
-  background-color: transparent;
+/* 折叠且还有更多回复时：底部渐隐蒙版，提示用户可以继续展开查看（mask 不影响交互） */
+.subpost.preview-fade {
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 48px), transparent);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 48px), transparent);
 }
 
-.thread-info {
-  display: flex;
-  gap: 5px;
-  opacity: 0.5;
-  align-items: center;
+/* 多余条目收纳区：展开 1fr，收起 0fr（transition）；DOM 仅在展开期间挂载 */
+.subpost-expand-wrap {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.25s ease;
 }
 
-.thread-media {
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
+.subpost-expand-wrap.expanded {
+  grid-template-rows: 1fr;
 }
 
+/* 首次插入时无法触发 transition，用动画完成展开 */
+.subpost-expand-wrap.opening {
+  grid-template-rows: 1fr;
+  animation: subpost-expand 0.25s ease;
+}
 
-.thread-preview {
+@keyframes subpost-expand {
+  from {
+    grid-template-rows: 0fr;
+  }
+
+  to {
+    grid-template-rows: 1fr;
+  }
+}
+
+.subpost-expand-panel {
+  overflow: hidden;
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
 }
 
-.thread-preview .thread-title {
-  font-weight: bold;
-  font-size: 16px;
+.load-sentinel {
+  height: 1px;
+  margin-top: -1px;
+}
+
+/* 分页加载指示：页面左下角悬浮胶囊，不内联在回复里 */
+.subpost-loading-pill {
+  position: fixed;
+  left: 16px;
+  bottom: 16px;
+  z-index: 3200;
 }
 </style>

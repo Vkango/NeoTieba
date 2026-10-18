@@ -853,19 +853,6 @@ onMounted(async (): Promise<void> => {
   margin-top: 5px;
 }
 
-.thread {
-  width: 80%;
-  box-sizing: border-box;
-  padding: 5px 15px;
-  display: flex;
-  flex-direction: column;
-  border-radius: 8px;
-  font-size: 13px;
-  gap: 10px;
-  transition: background-color 0.3s ease;
-  background-color: rgba(var(--text-color), 0.02);
-}
-
 
 .at-button {
   background-color: transparent;
