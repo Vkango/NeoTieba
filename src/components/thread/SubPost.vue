@@ -78,11 +78,6 @@ const props = defineProps({
   border-radius: 8px;
   font-size: 13px;
   gap: 10px;
-  transition: background-color 0.3s ease;
-}
-
-.subpost-1:hover {
-  background-color: rgba(var(--text-color), 0.1);
 }
 
 .subpost-preview {

@@ -866,9 +866,6 @@ onMounted(async (): Promise<void> => {
   background-color: rgba(var(--text-color), 0.02);
 }
 
-.thread:hover {
-  background-color: rgba(var(--text-color), 0.1);
-}
 
 .at-button {
   background-color: transparent;

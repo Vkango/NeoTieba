@@ -314,10 +314,6 @@ button:active {
     background-color: rgba(var(--text-color), 0.02);
 }
 
-.thread:hover {
-    background-color: rgba(var(--text-color), 0.1);
-}
-
 .thread .avatar {
     width: 35px;
     height: 35px;
@@ -552,6 +548,7 @@ html.macos .tabs {
     left: 70px;
     width: calc(100% - 400px);
 }
+
 /* 灵动岛风格提示胶囊（全局通用）：与看图模式顶部 island-bar 同款式样。
    Toast、头像栏悬停标题、拖拽引导胶囊等统一引用，不要在组件里重复这些外观属性。 */
 .dynamic-island-pill {

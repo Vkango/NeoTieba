@@ -32,7 +32,4 @@ defineProps({
     transition: all 0.3s ease;
 }
 
-.pinned-thread:hover {
-    background-color: rgba(var(--text-color), 0.1);
-}
 </style>

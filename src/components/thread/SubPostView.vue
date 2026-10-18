@@ -265,11 +265,6 @@ onMounted(async (): Promise<void> => {
   background-color: transparent;
 }
 
-.thread:hover {
-  background-color: transparent;
-
-}
-
 .thread-info {
   display: flex;
   gap: 5px;
