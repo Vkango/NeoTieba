@@ -29,6 +29,7 @@ import ImageHoverPreview from '@/components/common/ImageHoverPreview.vue';
 import ContextMenu from '@/components/ui/ContextMenu.vue';
 import CollectionRail from '@/components/layout/CollectionRail.vue';
 import CollectionDrawer from '@/components/layout/CollectionDrawer.vue';
+import CollectionDragOverlay from '@/components/layout/CollectionDragOverlay.vue';
 
 interface NavItem {
   id: number;
@@ -674,6 +675,8 @@ onMounted(async (): Promise<void> => {
       </NotificationBox>
     </Transition>
     <CollectionDrawer />
+    <!-- 集锦拖拽浮层：分组名胶囊 + 拖拽删除高亮区（头像栏/集锦面板共用） -->
+    <CollectionDragOverlay />
     <!-- 图片查看器与 Toast 必须盖过楼中楼卡片等弹窗（3200 层）。
          传送至 body，与楼中楼卡片同处根层叠上下文，避免被容器内的层叠上下文压住。 -->
     <Teleport to="body">

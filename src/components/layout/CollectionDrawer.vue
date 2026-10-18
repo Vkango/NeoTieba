@@ -27,7 +27,8 @@
             <div>暂无集锦</div>
             <div class="empty-sub">右键标签页或拖动标签到左侧头像栏即可添加</div>
           </div>
-          <section v-for="group in collectionStore.orderedGroups" :key="group.id" class="group">
+          <section v-for="group in collectionStore.orderedGroups" :key="group.id" class="group"
+            :data-group-id="group.id">
             <div class="group-header" :class="{ 'dragging': draggingGroupId === group.id }"
               @mousedown="onGroupHeaderMouseDown($event, group)"
               @contextmenu.prevent="openGroupContextMenu($event, group)">
@@ -52,7 +53,8 @@
             </div>
             <div class="group-items">
               <button v-for="item in itemsOf(group.id)" :key="item.id" type="button" class="collection-item"
-                :class="{ 'dragging': draggingId === item.id }" :data-group-id="group.id" :title="item.title"
+                :class="{ 'dragging': draggingId === item.id }" :data-group-id="group.id" :data-item-id="item.id"
+                :title="item.title"
                 @click="onItemClick(item)" @mousedown="onItemMouseDown($event, item)"
                 @contextmenu.prevent="openItemContextMenu($event, item)">
                 <CollectionAvatar :type="item.type" :user-icon="item.userIcon" :bar-icon="item.barIcon" :size="34" />
@@ -74,6 +76,10 @@ import { nextTick, ref } from 'vue';
 import CollectionAvatar from '#components/collection/CollectionAvatar.vue';
 import { useCollectionStore, type CollectionGroup, type CollectionItem } from '@/stores/collection';
 import { useTabNavigation } from '@/composables/useTabNavigation';
+import {
+  beginCollectionDrag, endCollectionDrag, hideCollectionCapsule, isOverCollectionDeleteZone,
+  setCollectionDragDeleteHovered, updateCollectionCapsule
+} from '@/composables/useCollectionDragOverlay';
 import { openContextMenu, type ContextMenuItem } from '@/utils/contextMenu';
 
 const collectionStore = useCollectionStore();
@@ -156,7 +162,7 @@ function startResize(event: MouseEvent): void {
   window.addEventListener('mouseup', onUp);
 }
 
-// ---- 条目拖拽排序（组内拓扑顺序）----
+// ---- 条目拖拽（组内拓扑顺序；跨组移动；拖到删除区移除；胶囊展示当前分组名）----
 const bodyRef = ref<HTMLElement | null>(null);
 const draggingId = ref<string | null>(null);
 let dragSession: { id: string; groupId: string; moved: boolean } | null = null;
@@ -177,16 +183,49 @@ function onItemMouseDown(event: MouseEvent, item: CollectionItem): void {
 function onDragMove(event: MouseEvent): void {
   const session = dragSession;
   if (!session) return;
-  if (!session.moved && Math.abs(event.clientY - dragStartY) < 4) return;
-  session.moved = true;
+  if (!session.moved) {
+    if (Math.abs(event.clientY - dragStartY) < 4) return;
+    session.moved = true;
+    beginCollectionDrag(true);
+  }
   draggingId.value = session.id;
+  const title = collectionStore.items.find(item => item.id === session.id)?.title || '';
+  updateCollectionCapsule(event.clientX + 14, event.clientY, collectionStore.groupName(session.groupId), title);
   const body = bodyRef.value;
   if (!body) return;
-  const rows = Array.from(
-    body.querySelectorAll<HTMLElement>(`.collection-item[data-group-id="${session.groupId}"]`));
-  let target = rows.length - 1;
-  for (let i = 0; i < rows.length; i += 1) {
-    const rect = rows[i].getBoundingClientRect();
+  const overZone = isOverCollectionDeleteZone(event.clientX, event.clientY);
+  setCollectionDragDeleteHovered(overZone);
+  if (overZone) return; // 悬停删除区时冻结排序预览
+  // 光标离开面板列表后冻结排序/跨组移动：拖出去删除的路径上不产生交换
+  const bodyRect = body.getBoundingClientRect();
+  if (event.clientX < bodyRect.left || event.clientX > bodyRect.right
+    || event.clientY < bodyRect.top || event.clientY > bodyRect.bottom) {
+    return;
+  }
+  // 光标落在其他分组区域内：直接移动过去
+  const sections = Array.from(body.querySelectorAll<HTMLElement>('.group[data-group-id]'));
+  for (const section of sections) {
+    const rect = section.getBoundingClientRect();
+    if (event.clientY >= rect.top && event.clientY < rect.bottom) {
+      const targetGroupId = section.dataset.groupId || '';
+      if (targetGroupId && targetGroupId !== session.groupId
+        && collectionStore.moveItem(session.id, targetGroupId)) {
+        session.groupId = targetGroupId;
+        lastTargetIndex = -1;
+        updateCollectionCapsule(event.clientX + 14, event.clientY, collectionStore.groupName(targetGroupId));
+      }
+      break;
+    }
+  }
+  // 组内插入位置：以同组其他条目的中线判定（拖拽物自身位置不影响计算）
+  const siblings = (collectionStore.itemsByGroup[session.groupId] || [])
+    .filter(item => item.id !== session.id);
+  let target = siblings.length;
+  for (let i = 0; i < siblings.length; i += 1) {
+    const el = body.querySelector<HTMLElement>(
+      `.collection-item[data-item-id="${CSS.escape(siblings[i].id)}"]`);
+    if (!el) continue;
+    const rect = el.getBoundingClientRect();
     if (event.clientY < rect.top + rect.height / 2) {
       target = i;
       break;
@@ -198,16 +237,21 @@ function onDragMove(event: MouseEvent): void {
   }
 }
 
-function onDragEnd(): void {
-  const session = dragSession;
+function onDragEnd(event: MouseEvent): void {
   window.removeEventListener('mousemove', onDragMove);
   window.removeEventListener('mouseup', onDragEnd);
+  const session = dragSession;
+  dragSession = null;
   if (session?.moved) {
     suppressClick = true;
     setTimeout(() => { suppressClick = false; }, 0);
+    if (isOverCollectionDeleteZone(event.clientX, event.clientY)) {
+      collectionStore.removeItem(session.id);
+    }
   }
-  dragSession = null;
   draggingId.value = null;
+  endCollectionDrag();
+  hideCollectionCapsule();
 }
 
 function onItemClick(item: CollectionItem): void {
@@ -240,11 +284,21 @@ function onGroupHeaderMouseDown(event: MouseEvent, group: CollectionGroup): void
 function onGroupDragMove(event: MouseEvent): void {
   const session = groupDragSession;
   if (!session) return;
-  if (!session.moved && Math.abs(event.clientY - groupDragStartY) < 4) return;
-  session.moved = true;
+  if (!session.moved) {
+    if (Math.abs(event.clientY - groupDragStartY) < 4) return;
+    session.moved = true;
+    // 锁定分组不可删除：不显示删除区
+    const group = collectionStore.groups.find(entry => entry.id === session.id);
+    beginCollectionDrag(!group?.locked);
+  }
   draggingGroupId.value = session.id;
+  updateCollectionCapsule(event.clientX + 14, event.clientY,
+    collectionStore.groups.find(entry => entry.id === session.id)?.name || '');
   const body = bodyRef.value;
   if (!body) return;
+  const overZone = isOverCollectionDeleteZone(event.clientX, event.clientY);
+  setCollectionDragDeleteHovered(overZone);
+  if (overZone) return; // 悬停删除区时冻结排序预览
   const headers = Array.from(body.querySelectorAll<HTMLElement>('.group-header'));
   let target = headers.length - 1;
   for (let i = 0; i < headers.length; i += 1) {
@@ -260,11 +314,21 @@ function onGroupDragMove(event: MouseEvent): void {
   }
 }
 
-function onGroupDragEnd(): void {
+function onGroupDragEnd(event: MouseEvent): void {
   window.removeEventListener('mousemove', onGroupDragMove);
   window.removeEventListener('mouseup', onGroupDragEnd);
+  const session = groupDragSession;
   groupDragSession = null;
+  if (session?.moved) {
+    const group = collectionStore.groups.find(entry => entry.id === session.id);
+    // 拖入删除区：删除分组（其中条目回落到默认分组；锁定分组不可删）
+    if (group && !group.locked && isOverCollectionDeleteZone(event.clientX, event.clientY)) {
+      collectionStore.removeGroup(group.id);
+    }
+  }
   draggingGroupId.value = null;
+  endCollectionDrag();
+  hideCollectionCapsule();
 }
 
 // ---- 条目右键 ----

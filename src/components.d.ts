@@ -14,6 +14,7 @@ declare module 'vue' {
     Bar: typeof import('./components/user/Bar.vue')['default']
     BarInfoCard: typeof import('./components/user/BarInfoCard.vue')['default']
     CollectionAvatar: typeof import('./components/collection/CollectionAvatar.vue')['default']
+    CollectionDragOverlay: typeof import('./components/layout/CollectionDragOverlay.vue')['default']
     CollectionDrawer: typeof import('./components/layout/CollectionDrawer.vue')['default']
     CollectionRail: typeof import('./components/layout/CollectionRail.vue')['default']
     Container: typeof import('./components/common/Container.vue')['default']
