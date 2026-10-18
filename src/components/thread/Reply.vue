@@ -301,7 +301,6 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  padding-left: 45px;
 }
 
 .thread-preview .thread-title {
