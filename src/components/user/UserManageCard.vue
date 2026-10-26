@@ -552,7 +552,7 @@ onBeforeUnmount(() => {
     border-radius: 10px;
     width: 90%;
     max-width: 900px;
-    max-height: 85vh;
+    height: min(600px, 85vh);
     box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
     position: relative;
     overflow: hidden;
@@ -581,7 +581,7 @@ onBeforeUnmount(() => {
 
 .card-content {
     display: flex;
-    height: 600px;
+    height: 100%;
     position: relative;
     overflow: hidden;
 }
@@ -596,6 +596,7 @@ onBeforeUnmount(() => {
 .qr-view {
     justify-content: center;
     align-items: center;
+    overflow-y: auto;
 }
 
 .promo-section {
@@ -652,14 +653,16 @@ onBeforeUnmount(() => {
 
 .manage-section {
     flex: 1;
+    min-width: 0;
     padding: 20px 40px;
     display: flex;
     flex-direction: column;
-    overflow-y: auto;
+    overflow: hidden;
 }
 
 .user-list-container {
     flex: 1;
+    min-height: 0;
     overflow-y: auto;
     margin-bottom: 20px;
 }
@@ -786,8 +789,10 @@ onBeforeUnmount(() => {
 
 .action-buttons {
     display: flex;
+    flex-wrap: wrap;
     gap: 10px;
     margin-top: auto;
+    flex-shrink: 0;
 }
 
 .action-btn {

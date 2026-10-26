@@ -12,7 +12,6 @@ export {}
 declare module 'vue' {
   export interface GlobalComponents {
     Bar: typeof import('./components/user/Bar.vue')['default']
-    BarInfoCard: typeof import('./components/user/BarInfoCard.vue')['default']
     CollectionAvatar: typeof import('./components/collection/CollectionAvatar.vue')['default']
     CollectionDragOverlay: typeof import('./components/layout/CollectionDragOverlay.vue')['default']
     CollectionDrawer: typeof import('./components/layout/CollectionDrawer.vue')['default']
@@ -23,14 +22,12 @@ declare module 'vue' {
     Drawer: typeof import('./components/layout/Drawer.vue')['default']
     ErrorReport: typeof import('./components/notification/ErrorReport.vue')['default']
     ExternalLinkDialog: typeof import('./components/common/ExternalLinkDialog.vue')['default']
-    HorizontalMaskScroll: typeof import('./components/common/HorizontalMaskScroll.vue')['default']
     HotkeyHelp: typeof import('./components/common/HotkeyHelp.vue')['default']
     HotkeySettings: typeof import('./components/settings/HotkeySettings.vue')['default']
     ImageHoverPreview: typeof import('./components/common/ImageHoverPreview.vue')['default']
     ImageViewer: typeof import('./components/common/ImageViewer.vue')['default']
     Item: typeof import('./components/common/Item.vue')['default']
     Loading: typeof import('./components/common/Loading.vue')['default']
-    LoadingWithTip: typeof import('./components/notification/LoadingWithTip.vue')['default']
     Notification: typeof import('./components/notification/Notification.vue')['default']
     NotificationBox: typeof import('./components/notification/NotificationBox.vue')['default']
     PageState: typeof import('./components/common/PageState.vue')['default']
