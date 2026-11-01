@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref, provide, nextTick, computed, type Ref, type Component, watch } from 'vue';
+import { onMounted, onBeforeUnmount, ref, provide, nextTick, computed, type Ref, type Component, watch } from 'vue';
 import type { NotificationComponent } from '@/components';
 import type { TabItem } from '@/types/common';
 import type { OpenSearchInBarPayload } from '@/types/navigation';
@@ -19,10 +19,11 @@ import Home from './pages/Home.vue';
 import { clipboardService } from '@/services/clipboard-service';
 import { URLParser } from '@/services/url-parser';
 import { useApiStore, useHistoryStore, useSettingsStore } from '@/stores';
-import { useTabStore } from '@/stores/tabs';
+import { SPLIT_DIVIDER_WIDTH, SPLIT_MIN_PANE_WIDTH, useTabStore } from '@/stores/tabs';
 import { useCollectionStore } from '@/stores/collection';
 import { useTabNavigation } from '@/composables/useTabNavigation';
 import { useHotkeys } from '@/composables/useHotkeys';
+import { useSplitDragOverlay } from '@/composables/useSplitDragOverlay';
 import { hotkeyState } from '@/core/hotkeys';
 import ExternalLinkDialog from '@/components/common/ExternalLinkDialog.vue';
 import ImageHoverPreview from '@/components/common/ImageHoverPreview.vue';
@@ -97,6 +98,7 @@ const tabStore = useTabStore();
 const historyStore = useHistoryStore();
 const settingsStore = useSettingsStore();
 const collectionStore = useCollectionStore();
+const splitOverlay = useSplitDragOverlay();
 
 const containerStyle = computed(() => {
   if (settingsStore.wallpaperEffect !== 'image' || !settingsStore.wallpaperUrl) {
@@ -145,24 +147,218 @@ const {
   openLibrary
 } = useTabNavigation();
 
+/* ------------------------------- 分屏布局 ------------------------------- */
+
+const containerRef = ref<HTMLElement | null>(null);
+
+/** gi 之后是否还有可见分屏（决定分隔条是否"功能可用"） */
+function existsVisibleAfter(gi: number): boolean {
+  return tabStore.groups.some((g, i) => i > gi && !g.hidden);
+}
+
+/** gi 之后最近的可见分屏下标，无则 -1 */
+function nearestVisibleAfter(gi: number): number {
+  for (let i = gi + 1; i < tabStore.groups.length; i++) {
+    if (!tabStore.groups[i].hidden) return i;
+  }
+  return -1;
+}
+
+/**
+ * Grid 列模板：分屏列与分隔列交错。列宽用 fr 表达（调宽时保持总权重不变，
+ * fr 归一化后与 px 目标值一致），这样内容区与顶部标签条共用同一模板、
+ * 比例始终对齐（标签条区域更窄，按相同占比分配）。
+ * 隐藏分屏宽度置 0；两个可见分屏之间夹着隐藏分屏时分隔条仍然有效（6px）。
+ */
+const gridColumnsStyle = computed(() => {
+  const n = tabStore.groups.length;
+  if (n <= 1) return {};
+  const widths = tabStore.groupWidths;
+  const useWeights = widths.length === n;
+  const cols: string[] = [];
+  for (let i = 0; i < n; i++) {
+    cols.push(tabStore.groups[i].hidden
+      ? '0px'
+      : (useWeights ? `${Math.max(widths[i], SPLIT_MIN_PANE_WIDTH)}fr` : 'minmax(0, 1fr)'));
+    if (i < n - 1) {
+      const functional = !tabStore.groups[i].hidden && existsVisibleAfter(i);
+      cols.push(functional ? `${SPLIT_DIVIDER_WIDTH}px` : '0px');
+    }
+  }
+  return { gridTemplateColumns: cols.join(' ') };
+});
+
+function tabPaneStyle(tab: TabItem): Record<string, string> {
+  // Welcome 是欢迎页而非普通分屏页：横跨整个内容区展示，不落入任何分屏列
+  const componentName = (tab.component as { __name?: string })?.__name;
+  if (componentName === 'Welcome') {
+    return { gridColumn: '1 / -1', zIndex: '1' };
+  }
+  const group = tabStore.groupOfTab(tab);
+  const gi = group ? tabStore.groups.findIndex(g => g.id === group.id) : 0;
+  return { gridColumn: String(gi * 2 + 1) };
+}
+
+function dividerTrackStyle(gi: number): Record<string, string> {
+  return { gridColumn: String(gi * 2 + 2) };
+}
+
+/** 点击某个分屏（内容区）时聚焦它，键盘与左侧导航高亮跟随 */
+function focusGroupPane(groupId: string | undefined): void {
+  if (groupId) tabStore.focusGroup(groupId);
+}
+
+/* --------------------------- 分屏隐藏 / 相邻交换 --------------------------- */
+
+const anyHiddenGroups = computed(() => tabStore.groups.some(g => g.hidden));
+
+/** 分组当前页的图标（恢复书签展示用） */
+function groupIconUrl(group: { activeKey: string | null }): string {
+  const tab = group.activeKey ? tabStore.tabs.find(t => t.key === group.activeKey) : undefined;
+  const icon = tab?.icon || '';
+  if (!icon) return '';
+  if (icon.startsWith('http') || icon.startsWith('data:') || icon.startsWith('/')) return icon;
+  try {
+    return new URL(icon, import.meta.url).href;
+  } catch {
+    return icon;
+  }
+}
+
+/** 是否为最后一个可见分屏的标签条槽位（需要在标题栏公摊前截断） */
+function isLastVisibleSlot(gi: number): boolean {
+  if (tabStore.groups[gi].hidden) return false;
+  return !tabStore.groups.some((g, i) => i > gi && !g.hidden);
+}
+
+/** 隐藏分屏恢复书签的锚点布局：最近的可见邻屏、靠近隐藏侧的顶角 */
+function hiddenChipLayout(group: { id: string; hidden?: boolean }): {
+  anchorGi: number; useLeft: boolean; stackIndex: number; isolated: boolean;
+} {
+  const gi = tabStore.groups.findIndex(g => g.id === group.id);
+  let leftGi = -1;
+  let rightGi = -1;
+  for (let i = gi - 1; i >= 0; i--) {
+    if (!tabStore.groups[i].hidden) { leftGi = i; break; }
+  }
+  for (let i = gi + 1; i < tabStore.groups.length; i++) {
+    if (!tabStore.groups[i].hidden) { rightGi = i; break; }
+  }
+  if (leftGi < 0 && rightGi < 0) return { anchorGi: -1, useLeft: false, stackIndex: 0, isolated: true };
+  // 距离相同取左侧：书签贴在邻屏朝向隐藏侧的顶角
+  const useLeft = leftGi >= 0 && (rightGi < 0 || (gi - leftGi) <= (rightGi - gi));
+  const anchorGi = useLeft ? leftGi : rightGi;
+  // 同一角按拓扑顺序堆叠：同一段隐藏区间内，数组靠前的胶囊在上
+  const stackIndex = useLeft ? gi - leftGi - 1 : gi;
+  return { anchorGi, useLeft, stackIndex, isolated: false };
+}
+
+/** 贴右缘的书签（锚定左侧邻屏）内容行反转：图标固定在贴边一侧，标题向屏内展开 */
+function hiddenChipFlips(group: { id: string; hidden?: boolean }): boolean {
+  return hiddenChipLayout(group).useLeft;
+}
+
+function hiddenChipStyle(group: { id: string; hidden?: boolean }): Record<string, string> {
+  const layout = hiddenChipLayout(group);
+  if (layout.isolated) {
+    return { position: 'fixed', top: '55px', left: '80px', zIndex: '30' };
+  }
+  // 书签样式：平贴的一侧直角，外侧圆角（贴左缘 0 20px 20px 0，贴右缘反向）
+  return {
+    gridColumn: String(layout.anchorGi * 2 + 1),
+    gridRow: '1',
+    justifySelf: layout.useLeft ? 'end' : 'start',
+    marginTop: `${10 + layout.stackIndex * 38}px`,
+    borderRadius: layout.useLeft ? '20px 0 0 20px' : '0 20px 20px 0'
+  };
+}
+
+/** 书签悬停展宽后显示的标题：该分屏的激活页 */
+function groupActiveTitle(group: { activeKey: string | null }): string {
+  const tab = group.activeKey ? tabStore.tabs.find(t => t.key === group.activeKey) : undefined;
+  return tab?.title || '空分屏';
+}
+
+/** 缝隙工具条：交换左右两个可见分屏的布局位置（有分屏隐藏时禁用，store 内兜底） */
+function swapSides(gi: number, ri: number): void {
+  if (anyHiddenGroups.value || ri < 0) return;
+  const left = tabStore.groups[gi];
+  const right = tabStore.groups[ri];
+  if (left && right) tabStore.swapAdjacentGroups(left.id, right.id);
+}
+
+/** 缝隙工具条：隐藏某侧分屏（主分屏与最后一个可见分屏不可隐藏，store 内兜底） */
+function hideSide(gi: number): void {
+  const group = tabStore.groups[gi];
+  if (group) tabStore.setHidden(group.id, true);
+}
+
+/* 分屏分隔条拖拽调宽（沿用集锦抽屉的 mousedown + window mousemove 模式） */
+interface PaneResizeSession {
+  startX: number;
+  /** 左右两个"可见"分屏的下标（中间可夹隐藏分屏） */
+  li: number;
+  ri: number;
+  widths: number[];
+  avail: number;
+}
+let paneResizeSession: PaneResizeSession | null = null;
+
+function startPaneResize(event: MouseEvent, li: number): void {
+  if (event.button !== 0) return;
+  const el = containerRef.value;
+  if (!el) return;
+  const ri = nearestVisibleAfter(li);
+  if (ri < 0) return;
+  const n = tabStore.groups.length;
+  const avail = el.getBoundingClientRect().width - SPLIT_DIVIDER_WIDTH * (n - 1);
+  const widths = tabStore.groupWidths.length === n
+    ? [...tabStore.groupWidths]
+    : Array.from({ length: n }, () => avail / n);
+  paneResizeSession = { startX: event.clientX, li, ri, widths, avail };
+  window.addEventListener('mousemove', onPaneResize);
+  window.addEventListener('mouseup', endPaneResize);
+  document.body.style.cursor = 'col-resize';
+  event.preventDefault();
+}
+
+function onPaneResize(event: MouseEvent): void {
+  const session = paneResizeSession;
+  if (!session) return;
+  const n = tabStore.groups.length;
+  if (session.widths.length !== n) {
+    endPaneResize();
+    return;
+  }
+  const { li, ri } = session;
+  // 列宽用 fr 表达：拖拽只在左右两个可见分屏间转移权重，总和保持等于可用宽度，
+  // 这样 fr 归一化后渲染宽度与目标 px 一致，内容区与顶部标签条比例同步
+  const upper = session.widths[li] + session.widths[ri] - SPLIT_MIN_PANE_WIDTH;
+  const newLeft = Math.min(
+    Math.max(session.widths[li] + (event.clientX - session.startX), SPLIT_MIN_PANE_WIDTH),
+    Math.max(upper, SPLIT_MIN_PANE_WIDTH)
+  );
+  const applied = newLeft - session.widths[li];
+  const widths = [...session.widths];
+  widths[li] = newLeft;
+  widths[ri] -= applied;
+  tabStore.setGroupWidths(widths);
+}
+
+function endPaneResize(): void {
+  paneResizeSession = null;
+  document.body.style.cursor = '';
+  window.removeEventListener('mousemove', onPaneResize);
+  window.removeEventListener('mouseup', endPaneResize);
+}
+
 watch(
   () => tabStore.activeKey,
   (newActiveKey) => {
-    if (newActiveKey) {
-      const tab = tabStore.tabs.find((t: TabItem) => t.key === newActiveKey);
-      if (tab) {
-        activeTab.value = {
-          component: tab.component,
-          props: tab.props,
-          key: tab.key,
-          renderKey: tab.renderKey || String(tab.key),
-          if: true,
-          origin: {
-            icon: tab.origin?.icon,
-            title: tab.origin?.title
-          }
-        };
-      }
+    if (!newActiveKey) return;
+    const tab = tabStore.tabs.find((t: TabItem) => t.key === newActiveKey);
+    if (tab && typeof tab.id === 'number') {
+      onSwitchTabs(tab.id);
     }
   },
   { immediate: false }
@@ -410,12 +606,6 @@ const onDeactivated = (key: string | number): void => {
   console.log('Tab deactivated:', key);
 };
 
-const onTabDelete = (key: string | number): void => {
-  if ((activeTab.value as TabItem).key === key) {
-    activeTab.value = {};
-  }
-};
-
 const addBar = async (id: number): Promise<void> => {
   naviListItem.value.forEach(element => {
     element.selected = false;
@@ -556,6 +746,10 @@ const handleOpenSearchInBar = (data: OpenSearchInBarPayload): void => {
   openSearchInBar(data);
 };
 
+onBeforeUnmount(() => {
+  endPaneResize();
+});
+
 onMounted(async (): Promise<void> => {
   await nextTick();
   isNotificationReady.value = true;
@@ -649,8 +843,73 @@ onMounted(async (): Promise<void> => {
       </div>
       <CollectionRail class="navi-collection" />
     </div>
-    <div class="container">
-      <div v-for="tab in tabStore.tabs" v-show="tab.key === activeTab.key" :key="tab.key" class="tab-pane">
+    <!-- 顶部标签栏：每个分屏一个标签条，列模板与内容区分屏一致（按占比分配）；
+         空白处 data-tauri-drag-region 可拖动窗口 -->
+    <div class="tabs-bar" data-tauri-drag-region :style="gridColumnsStyle">
+      <template v-for="(group, gi) in tabStore.groups" :key="group.id">
+        <!-- 显式列号：隐藏分屏的槽位不渲染时，后续标签条绝不能自动左移落进 0px 列 -->
+        <div v-if="!group.hidden" class="tabs-bar-slot" :data-group-id="group.id"
+          :style="{ gridColumn: String(gi * 2 + 1) }" :class="{ 'last-visible': isLastVisibleSlot(gi) }">
+          <TabStrip :group-id="group.id" />
+        </div>
+        <div v-if="gi < tabStore.groups.length - 1" class="tabs-bar-gap" :style="{ gridColumn: String(gi * 2 + 2) }"
+          @mousedown.prevent="startPaneResize($event, gi)"></div>
+      </template>
+    </div>
+    <!-- 内容分屏：所有标签常驻挂载（keep-alive），同列同格堆叠、v-show 控制可见，
+         移动分屏只改 grid 位置，组件实例不重建 -->
+    <div ref="containerRef" class="container" :style="gridColumnsStyle">
+      <!-- 分隔条：拖拽调宽；悬停显示分屏互动工具条（交换 / 隐藏左 / 隐藏右）。
+           中间夹着隐藏分屏的两个可见分屏之间，分隔条照常工作（不特殊化） -->
+      <template v-for="(group, gi) in tabStore.groups" :key="group.id">
+        <div v-if="gi < tabStore.groups.length - 1 && !group.hidden && existsVisibleAfter(gi)" class="pane-divider"
+          :style="dividerTrackStyle(gi)" @mousedown.prevent="startPaneResize($event, gi)">
+          <div class="divider-toolbar" @mousedown.stop @click.stop>
+            <span class="divider-btn material-symbols-outlined" title="交换两屏页面" :class="{ disabled: anyHiddenGroups }"
+              @click="swapSides(gi, nearestVisibleAfter(gi))">swap_horiz</span>
+            <span class="divider-btn material-symbols-outlined" title="隐藏左边分屏"
+              @click="hideSide(gi)">keyboard_double_arrow_left</span>
+            <span class="divider-btn material-symbols-outlined" title="隐藏右边分屏"
+              @click="hideSide(nearestVisibleAfter(gi))">keyboard_double_arrow_right</span>
+          </div>
+        </div>
+      </template>
+      <!-- 拖拽标签期间：所有可用落区提前高亮，提示胶囊锚定在各落区旁，悬停的目标加强 -->
+      <template v-for="(group, gi) in tabStore.groups" :key="`hl-${group.id}`">
+        <div v-if="splitOverlay.zonesActive && group.id !== splitOverlay.sourceGroupId && !group.hidden"
+          class="pane-drop-highlight" :data-group-id="group.id"
+          :class="{ hovered: tabStore.splitDropZone?.type === 'move' && tabStore.splitDropZone.groupId === group.id }"
+          :style="{ gridColumn: String(gi * 2 + 1) }">
+          <div class="pane-drop-label dynamic-island-pill"
+            :class="{ hovered: tabStore.splitDropZone?.type === 'move' && tabStore.splitDropZone.groupId === group.id }">
+            <span class="material-symbols-outlined">drag_pan</span>
+            <span>移动到此分屏</span>
+          </div>
+        </div>
+      </template>
+      <div v-if="splitOverlay.zonesActive" class="pane-drop-create-bar"
+        :class="{ hovered: tabStore.splitDropZone?.type === 'create' }">
+        <div class="pane-drop-label dynamic-island-pill"
+          :class="{ hovered: tabStore.splitDropZone?.type === 'create' }">
+          <span class="material-symbols-outlined">drag_pan</span>
+          <span>新建分屏</span>
+        </div>
+      </div>
+      <!-- 隐藏分屏的恢复入口：书签式图标贴在相邻可见分屏朝向隐藏侧的顶角，
+           悬停沿锚定边反向展宽露出激活页标题，点击重新显示 -->
+      <template v-for="group in tabStore.groups" :key="`chip-${group.id}`">
+        <div v-if="group.hidden" class="hidden-chip"
+          :class="{ 'flip': hiddenChipFlips(group), 'edge-right': hiddenChipFlips(group), 'edge-left': !hiddenChipFlips(group) }"
+          :style="hiddenChipStyle(group)" @click="tabStore.setHidden(group.id, false)">
+          <img v-if="groupIconUrl(group)" class="hidden-chip-icon" :src="groupIconUrl(group)"
+            referrerpolicy="no-referrer" />
+          <span v-else class="material-symbols-outlined hidden-chip-icon">visibility</span>
+          <span class="hidden-chip-title">{{ groupActiveTitle(group) }}</span>
+        </div>
+      </template>
+      <div v-for="tab in tabStore.tabs" v-show="tabStore.isTabVisibleInPane(tab)" :key="tab.key" class="tab-pane"
+        :style="tabPaneStyle(tab)" :data-tab-key="tab.key" :data-group-id="tab.groupId"
+        @mousedown.capture="focusGroupPane(tabStore.groupOfTab(tab)?.id)">
         <keep-alive>
           <component @deactivated="onDeactivated(tab.key)" :is="tab.component" :key="tab.renderKey || tab.key"
             v-if="tab.if" v-bind="tab.props" @openThread="openThread" @openUser="openUser" @openBar="openBar"
@@ -661,8 +920,6 @@ onMounted(async (): Promise<void> => {
     </div>
     <TitleBar ref="titleBarRef" @showTabs="onShowTabs" @showNotificationBox="onShowNotificationBox"
       :msgCount="(notificationComponent?.notifications?.length || 0) + (notificationComponent?.hiddenNotifications?.length || 0)" />
-    <Tabs class="tabs" @onSwitchTabs="onSwitchTabs" @onTabDelete="onTabDelete" @refresh="onRefreshTab">
-    </Tabs>
     <Transition name="notification-box">
       <TabList class="notification-box" v-if="showTabList" @refresh="onRefreshTab"></TabList>
     </Transition>
@@ -754,8 +1011,9 @@ onMounted(async (): Promise<void> => {
 }
 
 .container {
-  display: flex;
-  flex-direction: row;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
   position: absolute;
   width: calc(100% - 70px);
   top: 45px;
@@ -818,34 +1076,276 @@ onMounted(async (): Promise<void> => {
 <style>
 .tab-pane {
   width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  position: relative;
+  /* 显式钉在第 1 行：同列多个 pane 必须堆叠在同一格，
+     否则 grid 自动放置会把后续 pane 挤到新行导致布局错乱 */
+  grid-row: 1;
+}
+
+/* 顶部标签栏：与内容区完全同宽同列模板，每个分屏的标签条与内容格左边对齐；
+   空白处可拖动窗口（data-tauri-drag-region）。层级低于标题栏（1100），
+   最右分屏标签过多时滑入标题栏下方而非遮挡窗口按钮 */
+.tabs-bar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: stretch;
+  position: fixed;
+  top: 0;
+  left: 70px;
+  width: calc(100% - 70px);
+  /* 顶到 0px 并用 padding 补出原 5px 空隙：标签栏上缘的空白也属于
+     data-tauri-drag-region，鼠标移到窗口最顶端仍可拖动窗口 */
+  height: 47px;
+  padding-top: 5px;
+  box-sizing: border-box;
+  z-index: 1090;
+  transition: left 0.3s ease, width 0.3s ease;
+}
+
+/* 集锦抽屉打开：与内容区同步右移避让 */
+#container.drawer-open .tabs-bar {
+  left: calc(70px + var(--collection-drawer-width, 380px));
+  width: calc(100% - 70px - var(--collection-drawer-width, 380px));
+}
+
+#container.drawer-resizing .tabs-bar {
+  transition: none;
+}
+
+.tabs-bar-slot {
+  min-width: 0;
+  overflow: hidden;
+  display: flex;
+  align-items: stretch;
+}
+
+/* 公摊：最后一个可见分屏的标签条在标题栏区域（右侧 330px）前截断，
+   不压窗口按钮；其余分屏标签条仍与内容格左边对齐 */
+.tabs-bar-slot.last-visible {
+  margin-right: 330px;
+}
+
+.tabs-bar-gap {
+  width: 6px;
+}
+
+.pane-divider {
+  cursor: col-resize;
+  background-color: transparent;
+  position: relative;
+  z-index: 5;
+  grid-row: 1;
+}
+
+/* 调节器位于两分屏交界处：平时不显示，移入时浮现细分隔线 */
+.pane-divider::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 12px;
+  bottom: 12px;
+  width: 1px;
+  transform: translateX(-50%);
+  background-color: transparent;
+  transition: background-color 0.2s;
+  pointer-events: none;
+}
+
+.pane-divider:hover {
+  background-color: rgba(var(--text-color), 0.08);
+}
+
+.pane-divider:hover::after {
+  background-color: rgba(var(--text-color), 0.45);
+}
+
+/* 缝隙互动工具条：悬停分隔条时浮现，纵向排列，操作两屏（交换 / 隐藏左 / 隐藏右） */
+.divider-toolbar {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 4px;
+  border-radius: 10px;
+  border: 1px solid rgba(var(--primary-color), 0.45);
+  background-color: rgba(var(--background-color), 0.85);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  opacity: 0;
+  pointer-events: none;
+  z-index: 20;
+  transition: opacity 0.15s ease;
+}
+
+.pane-divider:hover .divider-toolbar {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.divider-btn {
+  font-size: 17px;
+  color: rgb(var(--primary-color));
+  opacity: 0.75;
+  cursor: pointer;
+  border-radius: 6px;
+  padding: 3px;
+}
+
+.divider-btn:hover {
+  opacity: 1;
+  background-color: rgba(var(--primary-color), 0.12);
+}
+
+.divider-btn.disabled {
+  opacity: 0.2;
+  pointer-events: none;
+}
+
+/* 隐藏分屏的恢复书签：同统一胶囊的布局（图标+标题、模糊底、细描边），
+   内容始终完整排布，仅用 max-width 做裁切窗口，悬停平滑展开 */
+.hidden-chip {
+  align-self: start;
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  width: auto;
+  min-width: 40px;
+  max-width: 40px;
+  height: 32px;
+  padding: 0 8px;
+  overflow: hidden;
+  background-color: rgba(var(--text-color), 0.1);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(var(--text-color), 0.12);
+  cursor: pointer;
+  user-select: none;
+  z-index: 30;
+  transition: max-width 0.18s ease, background-color 0.15s ease;
+}
+
+.hidden-chip:hover {
+  max-width: 900px;
+}
+
+.hidden-chip.flip {
+  flex-direction: row-reverse;
+}
+
+/* 平贴分屏边缘的一侧不画竖向边框：只保留上下横线与圆弧侧 */
+.hidden-chip.edge-left {
+  border-width: 1px 1px 1px 0;
+}
+
+.hidden-chip.edge-right {
+  border-width: 1px 0 1px 1px;
+}
+
+.hidden-chip .material-symbols-outlined {
+  font-size: 16px;
+}
+
+/* 图标与标签一致做圆形化：方形图标被裁成纯圆形，本来就是圆形的不受影响 */
+.hidden-chip-icon {
+  width: 20px;
+  height: 20px;
+  border-radius: 16px;
+  flex: 0 0 auto;
+}
+
+.hidden-chip-title {
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  color: rgb(var(--text-color));
+}
+
+.hidden-chip .hidden-chip-title {
+  margin: 0 12px 0 8px;
+}
+
+.hidden-chip.flip .hidden-chip-title {
+  margin: 0 8px 0 12px;
+}
+
+/* 拖拽期间的基础落区高亮（所有可用目标），hovered = 光标悬停的当前目标 */
+.pane-drop-highlight {
+  /* 胶囊的定位基准：必须自身为定位元素，否则胶囊会跑到整个容器中间 */
+  position: relative;
+  pointer-events: none;
+  background-color: rgba(70, 160, 255, 0.05);
+  outline: 1px solid rgba(70, 160, 255, 0.22);
+  outline-offset: -1px;
+  border-radius: 5px;
+  z-index: 10;
+  grid-row: 1;
+}
+
+.pane-drop-highlight.hovered {
+  background-color: rgba(70, 160, 255, 0.12);
+  outline: 1.5px solid rgba(70, 160, 255, 0.65);
+}
+
+/* 锚定在各分屏顶部的提示胶囊：外观走全局 .dynamic-island-pill（同集锦引导），这里只管定位 */
+.pane-drop-label {
+  position: absolute;
+  top: 44px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 12px;
+  white-space: nowrap;
+  /* 胶囊本身是投放热区（父级高亮层 pointer-events:none，这里重新开启） */
+  pointer-events: auto;
+  z-index: 11;
+  transition: transform 0.15s ease;
+}
+
+.pane-drop-label .material-symbols-outlined {
+  font-size: 14px;
+}
+
+.pane-drop-label.hovered {
+  transform: translateX(-50%) scale(1.06);
+}
+
+/* 右缘新建区的胶囊：锚在屏内右缘居中，不超出屏幕 */
+.pane-drop-create-bar .pane-drop-label {
+  left: auto;
+  right: 18px;
+  transform: translateY(-50%);
+}
+
+.pane-drop-create-bar .pane-drop-label.hovered {
+  transform: translateY(-50%) scale(1.06);
+}
+
+.pane-drop-create-bar {
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background-color: rgba(70, 160, 255, 0.35);
+  pointer-events: none;
+  z-index: 10;
+  grid-row: 1;
+}
+
+.pane-drop-create-bar.hovered {
+  background-color: rgba(70, 160, 255, 0.8);
+  box-shadow: -2px 0 8px rgba(70, 160, 255, 0.4);
 }
 
 .icon_ {
   filter: invert(var(--invert));
-}
-
-.tabs {
-  position: fixed;
-  top: 5px;
-  /* 400px = 330px 标题栏(拖动区+头像/标签按钮+窗口控制) + 70px 侧边栏，
-     保证标签过多时右侧仍有可拖动空隙 */
-  width: calc(100% - 400px);
-  left: 70px;
-  overflow-x: hidden;
-  height: 42px;
-  overflow-y: hidden;
-  z-index: 1101;
-  transition: left 0.3s ease, width 0.3s ease;
-}
-
-/* 集锦分屏：标签条同步右移避让 */
-#container.drawer-open .tabs {
-  left: calc(70px + var(--collection-drawer-width, 380px));
-  width: calc(100% - 400px - var(--collection-drawer-width, 380px));
-}
-
-#container.drawer-resizing .tabs {
-  transition: none;
 }
 
 .thread .avatar {

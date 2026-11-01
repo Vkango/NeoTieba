@@ -145,8 +145,9 @@ defineExpose({ reveal });
   position: absolute;
   top: 50%;
   right: 12px;
-  /* Stay below the global tabs and notification surfaces. */
-  z-index: 1000;
+  /* 低于分屏分隔条工具条（z-index 5），避免展开时盖住它；
+     全局标签栏/通知等在更高层级，不受影响 */
+  z-index: 4;
   transform: translateY(-50%);
   width: 34px;
   max-width: calc(100% - 24px);

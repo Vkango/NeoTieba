@@ -98,6 +98,18 @@ export interface NotificationItem {
     click?: () => void;
 }
 
+// 分屏组（像 VSCode 的编辑器组；数组顺序即左右布局顺序）
+export interface SplitGroup {
+    id: string;
+    /** 该分屏当前显示的标签 key */
+    activeKey: string | null;
+    /** 分屏被隐藏（至少保留一个可见分屏；主分屏不可隐藏） */
+    hidden?: boolean;
+}
+
+// 标签拖到内容区时的分屏落点：move = 移入目标分屏（beforeKey = 插到该组某标签前），create = 右缘新建分屏
+export type SplitDropZone = { type: 'move'; groupId: string; beforeKey?: string } | { type: 'create' };
+
 // Tab项
 export interface TabItem {
     id: number;
@@ -117,6 +129,8 @@ export interface TabItem {
     closable?: boolean;
     origin?: TabItem;
     if?: boolean;
+    /** 所属分屏组 id（groups 数组顺序决定分屏左右位置） */
+    groupId: string;
     /** 帖子页加载完成后记录的楼主头像（用于集锦条目头像） */
     authorIcon?: string;
 }

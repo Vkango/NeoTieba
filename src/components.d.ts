@@ -42,7 +42,7 @@ declare module 'vue' {
     SubPostView: typeof import('./components/thread/SubPostView.vue')['default']
     TabInfo: typeof import('./components/layout/TabInfo.vue')['default']
     TabList: typeof import('./components/layout/TabList.vue')['default']
-    Tabs: typeof import('./components/layout/Tabs.vue')['default']
+    TabStrip: typeof import('./components/layout/TabStrip.vue')['default']
     Tag: typeof import('./components/common/Tag.vue')['default']
     Thread: typeof import('./components/thread/Thread.vue')['default']
     ThreadFloorIndex: typeof import('./components/thread/ThreadFloorIndex.vue')['default']

@@ -27,11 +27,13 @@ const identityKey = computed(() => {
 });
 
 const storageKey = computed(() => identityKey.value ? `scrollPosition:${identityKey.value}` : '');
+// 分屏下「激活」以所在分屏组的当前页为准，而非全局聚焦标签——
+// 两个分屏同时可见时，各自的滚动恢复互不干扰
 const isActiveTab = computed(() => {
   if (props.tabKey === undefined || props.tabKey === null) {
     return true;
   }
-  return tabStore.activeKey === String(props.tabKey);
+  return tabStore.isTabKeyVisibleInPane(String(props.tabKey));
 });
 
 function getSavedPosition(): number {
@@ -105,9 +107,9 @@ onActivated(() => {
 });
 
 watch(
-  () => [tabStore.activeKey, storageKey.value] as const,
-  () => {
-    restoreScrollPosition();
+  () => [isActiveTab.value, storageKey.value] as const,
+  ([active]) => {
+    if (active) restoreScrollPosition();
   },
   { flush: 'post' }
 );

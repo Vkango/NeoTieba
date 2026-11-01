@@ -159,7 +159,10 @@ export function useHotkeys(ctx: HotkeyContext): void {
 
   function focusPageSearch(): boolean {
     const panes = Array.from(document.querySelectorAll<HTMLElement>('.tab-pane'));
-    const activePane = panes.find((pane) => pane.style.display !== 'none');
+    const activeKey = String(tabStore.activeKey ?? '');
+    // 分屏下定位到当前聚焦标签所在 pane（data-tab-key 由 App.vue 写入）
+    const activePane = panes.find((pane) => pane.dataset.tabKey === activeKey && pane.style.display !== 'none')
+      ?? panes.find((pane) => pane.style.display !== 'none');
     const input = activePane?.querySelector<HTMLElement>('[data-kb-search]');
     if (input) {
       input.focus();
