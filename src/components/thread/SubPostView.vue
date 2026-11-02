@@ -21,7 +21,7 @@
   </div>
   <Teleport to="body">
     <transition name="fade1">
-      <Loading v-if="isLoading && currentPage > 0" class="subpost-loading-pill"></Loading>
+      <Loading v-if="isLoading && currentPage > 0" class="subpost-loading-pill" :style="pillStyle"></Loading>
     </transition>
     <!-- 叙事线浮窗：上文已滚出视野时，把高亮的那几条抽出来贴在旁边直接读 -->
     <transition name="chain-pv">
@@ -336,6 +336,23 @@ const isSentinelNearViewport = (): boolean => {
   return rect.top < bottom + 120;
 };
 
+// 分页加载胶囊浮在本楼中楼所在面板（滚动容器）的可视区左下角，而不是整个窗口的：
+// 分屏时窗口左下角可能是另一个面板，也会压到左侧导航栏
+const pillStyle = ref<Record<string, string>>({});
+const placeLoadingPill = (): void => {
+  const pane = rootRef.value?.closest('.component-container');
+  if (!pane) {
+    pillStyle.value = {};
+    return;
+  }
+  const rect = pane.getBoundingClientRect();
+  pillStyle.value = {
+    left: `${rect.left + 16}px`,
+    bottom: `${window.innerHeight - rect.bottom + 16}px`,
+  };
+};
+watch(isLoading, (loading) => { if (loading) placeLoadingPill(); });
+
 const loadNext = async (): Promise<void> => {
   if (isLoading.value) return;
   isLoading.value = true;
@@ -469,7 +486,7 @@ onBeforeUnmount(() => {
   margin-top: -1px;
 }
 
-/* 分页加载指示：页面左下角悬浮胶囊，不内联在回复里 */
+/* 分页加载指示：浮在所在面板左下角的胶囊（坐标由 placeLoadingPill 写入，这里是找不到面板时的兜底），不内联在回复里 */
 .subpost-loading-pill {
   position: fixed;
   left: 16px;
