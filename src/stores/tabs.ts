@@ -82,10 +82,11 @@ export const useTabStore = defineStore('tabs', () => {
     return !!tab && isTabVisibleInPane(tab);
   }
 
-  /** 组内某个成员被移走后，激活页回退到它在组内的相邻标签 */
+  /** 组内某个成员被移走后，激活页回退到它在组内的相邻"可见"标签
+   *  （欢迎页等 show:false 的背景标签不参与回退，避免接管分屏显示） */
   function fallbackGroupActiveKey(group: SplitGroup, removedTab: TabItem): void {
     if (group.activeKey !== removedTab.key) return;
-    const remaining = groupTabs(group.id);
+    const remaining = groupTabs(group.id).filter(t => t.show !== false);
     if (remaining.length === 0) {
       group.activeKey = null;
       return;
@@ -94,17 +95,34 @@ export const useTabStore = defineStore('tabs', () => {
     group.activeKey = (before[before.length - 1] ?? remaining[0]).key;
   }
 
-  /** 清理空分屏组：至少保留 1 组；主分组被清空时身份移交给第一组 */
+  /** 清理空分屏组：至少保留 1 组；主分组被清空时身份移交给第一组。
+   *  占用判定只看可见标签：欢迎页这类 show:false 的背景标签不占分组，
+   *  否则只剩欢迎页的分组永远无法回收，分屏收不回单屏（欢迎页还会以
+   *  grid-column:1/-1 叠在整个内容区上面）。 */
   function cleanupEmptyGroups(): void {
     if (groups.value.length <= 1) return;
-    const occupied = new Set(tabs.value.map(t => t.groupId));
+    const occupied = new Set(
+      tabs.value.filter(t => t.show !== false).map(t => t.groupId)
+    );
     const kept = groups.value.filter(g => occupied.has(g.id));
-    if (kept.length === 0 || kept.length === groups.value.length) return;
-    groups.value = kept;
+    if (kept.length === groups.value.length) return;
+    // 连一个可见标签都不剩：只保留第一个可见分组（实在没有就保留第一组），
+    // 让欢迎页以单屏全宽展示
+    groups.value = kept.length ? kept : [groups.value.find(g => !g.hidden) ?? groups.value[0]];
     if (!groups.value.some(g => g.id === mainGroupId.value)) {
       mainGroupId.value = groups.value[0].id;
     }
     groupWidths.value = [];
+    // 焦点修复：当前激活页是背景标签或其分组刚被移除时，切到存活分屏的当前页
+    const cur = currentTab.value;
+    const curGroupAlive = !!cur && groups.value.some(g => g.id === cur.groupId);
+    if (!cur || cur.show === false || !curGroupAlive) {
+      const target = groups.value.find(g => !g.hidden)
+        ?? groups.value[0];
+      const key = target
+        && (target.activeKey ?? groupTabs(target.id).find(t => t.show !== false)?.key);
+      if (key) switchTab(key);
+    }
   }
 
   /** 在锚点组右侧新建一个空分屏组 */
@@ -452,14 +470,17 @@ export const useTabStore = defineStore('tabs', () => {
   }
 
   /** 批量关闭的目标选取：仅用户可见且可关闭的标签会被关闭（始终排除目标标签本身）；
-   *  隐藏标签（如欢迎页）与 closable === false 的标签始终保留。 */
-  function closeableTabIdsBetween(predicate: (tab: TabItem, index: number, targetIndex: number) => boolean, targetId: number | string): number[] {
+   *  隐藏标签（如欢迎页）与 closable === false 的标签始终保留。
+   *  scopeGroupId 提供时只在同一分屏组内选取（组内位置序与全局 position 序一致）。 */
+  function closeableTabIdsBetween(predicate: (tab: TabItem, index: number, targetIndex: number) => boolean, targetId: number | string, scopeGroupId?: string): number[] {
     const ordered = visibleTabs.value;
     const targetIndex = ordered.findIndex(t => t.id === targetId || t.key === String(targetId));
     if (targetIndex < 0) return [];
     return ordered
       .map((tab, index) => ({ tab, index }))
-      .filter(({ tab, index }) => tab.id !== targetId && tab.show !== false && tab.closable !== false && predicate(tab, index, targetIndex))
+      .filter(({ tab, index }) => tab.id !== targetId && tab.show !== false && tab.closable !== false
+        && (!scopeGroupId || tab.groupId === scopeGroupId)
+        && predicate(tab, index, targetIndex))
       .map(({ tab }) => tab.id);
   }
 
@@ -473,7 +494,8 @@ export const useTabStore = defineStore('tabs', () => {
     groups.value.forEach(group => {
       if (group.activeKey && !tabs.value.some(t => t.key === group.activeKey)) {
         const remaining = groupTabs(group.id);
-        group.activeKey = remaining.length ? remaining[0].key : null;
+        const realRemaining = remaining.filter(t => t.show !== false);
+        group.activeKey = (realRemaining[0] ?? remaining[0])?.key ?? null;
       }
     });
     if (switchToKey !== null) switchTab(switchToKey);
@@ -492,17 +514,19 @@ export const useTabStore = defineStore('tabs', () => {
     removeTabsByIds(ids, switchKeyIfActiveRemoved(ids, target.key));
   }
 
+  /** 关闭左侧标签：只关闭同一分屏组内位于目标左侧的标签 */
   function closeLeftTabs(id: number | string): void {
     const target = getTab(id);
     if (!target) return;
-    const ids = closeableTabIdsBetween((_tab, index, targetIndex) => index < targetIndex, target.id);
+    const ids = closeableTabIdsBetween((_tab, index, targetIndex) => index < targetIndex, target.id, target.groupId);
     removeTabsByIds(ids, switchKeyIfActiveRemoved(ids, target.key));
   }
 
+  /** 关闭右侧标签：只关闭同一分屏组内位于目标右侧的标签 */
   function closeRightTabs(id: number | string): void {
     const target = getTab(id);
     if (!target) return;
-    const ids = closeableTabIdsBetween((_tab, index, targetIndex) => index > targetIndex, target.id);
+    const ids = closeableTabIdsBetween((_tab, index, targetIndex) => index > targetIndex, target.id, target.groupId);
     removeTabsByIds(ids, switchKeyIfActiveRemoved(ids, target.key));
   }
 

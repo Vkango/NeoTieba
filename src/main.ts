@@ -22,19 +22,22 @@ applyTheme(getStoredTheme());
 const isMacOS = /Macintosh|Mac OS X/i.test(navigator.userAgent) || /Mac/i.test(navigator.platform);
 document.documentElement.classList.toggle('macos', isMacOS);
 
-const appWindow = getCurrentWindow();
-appWindow.onFocusChanged(async ({ payload: focused }) => {
-    if (focused) {
-        try {
-const text = await readText();
-        if (text) {
-            clipboardService.handle(text);
+const isTauri = '__TAURI_INTERNALS__' in window;
+if (isTauri) {
+    const appWindow = getCurrentWindow();
+    appWindow.onFocusChanged(async ({ payload: focused }) => {
+        if (focused) {
+            try {
+                const text = await readText();
+                if (text) {
+                    clipboardService.handle(text);
+                }
+            } catch (error) {
+                // console.error("Failed to read clipboard:", error);
+            }
         }
-        } catch (error) {
-            // console.error("Failed to read clipboard:", error);
-        }
-    }
-});
+    });
+}
 
 const pinia = createPinia();
 pinia.use(piniaPluginPersistedstate);

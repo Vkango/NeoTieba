@@ -452,15 +452,19 @@ const collectionMenuChildren = (): ContextMenuItem[] => [
   { id: 'add-collection:new', label: '新建分组', icon: 'add' }
 ];
 
-// 标签右键菜单：统计目标两侧可关闭的标签数，用于禁用无效的批量关闭项
+// 标签右键菜单：统计目标两侧可关闭的标签数，用于禁用无效的批量关闭项。
+// 关闭左侧/右侧标签只在同一分屏组内生效，计数也按组内统计
 async function openTabContextMenu(event: MouseEvent, tab: TabItem): Promise<void> {
   if (tab.isClosing) return;
   const ordered = tabStore.visibleTabs.filter((item: TabItem) => item.show);
-  const targetIndex = ordered.findIndex((item: TabItem) => item.id === tab.id);
-  const countSide = (from: number, to: number): number =>
-    ordered.slice(from, to).filter((item: TabItem) => item.closable !== false).length;
-  const countLeft = targetIndex >= 0 ? countSide(0, targetIndex) : 0;
-  const countRight = targetIndex >= 0 ? countSide(targetIndex + 1, ordered.length) : 0;
+  const inGroup = ordered.filter((item: TabItem) => item.groupId === tab.groupId);
+  const targetIndexInGroup = inGroup.findIndex((item: TabItem) => item.id === tab.id);
+  const countSide = (list: TabItem[], from: number, to: number): number =>
+    list.slice(from, to).filter((item: TabItem) => item.closable !== false).length;
+  // 关闭其他标签：跨组统计所有可关闭标签（不含目标自己）
+  const countOthers = ordered.filter((item: TabItem) => item.id !== tab.id && item.closable !== false).length;
+  const countLeft = targetIndexInGroup >= 0 ? countSide(inGroup, 0, targetIndexInGroup) : 0;
+  const countRight = targetIndexInGroup >= 0 ? countSide(inGroup, targetIndexInGroup + 1, inGroup.length) : 0;
   const collectionPayload = tabToCollectionPayload(tab);
 
   const gi = tabStore.groups.findIndex(g => g.id === tab.groupId);
@@ -525,7 +529,7 @@ async function openTabContextMenu(event: MouseEvent, tab: TabItem): Promise<void
         label: '批量关闭',
         icon: 'tab_unselected',
         children: [
-          { id: 'close-others', label: '关闭其他标签', icon: 'tab_unselected', disabled: countLeft + countRight === 0 },
+          { id: 'close-others', label: '关闭其他标签', icon: 'tab_unselected', disabled: countOthers === 0 },
           { id: 'close-left', label: '关闭左侧标签', icon: 'keyboard_double_arrow_left', disabled: countLeft === 0 },
           { id: 'close-right', label: '关闭右侧标签', icon: 'keyboard_double_arrow_right', disabled: countRight === 0 }
         ]
