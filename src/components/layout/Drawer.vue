@@ -83,7 +83,7 @@ const props = defineProps({
   right: 0px;
   top: 0px;
   height: 100%;
-  width: 400px;
+  width: min(400px, calc(100vw - 70px));
   background-color: rgba(var(--background-color), 1);
   box-shadow: 0px 10px 60px 10px rgba(0, 0, 0, 0.2);
 

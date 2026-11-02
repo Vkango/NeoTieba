@@ -222,4 +222,25 @@ function handleSlider(value: number) {
   background: rgba(var(--primary-color), 0.16);
   cursor: pointer;
 }
+
+/* 紧凑内容区：控件换到第二行，与文字左缘对齐（图标 24px + 间距 15px） */
+@container page (max-width: 480px) {
+  .item-content {
+    flex-wrap: wrap;
+  }
+
+  .item-control {
+    flex-basis: 100%;
+    margin-left: 0;
+    padding-left: 39px;
+    box-sizing: border-box;
+  }
+
+  .select,
+  .input,
+  .slider {
+    width: 100%;
+    min-width: 0;
+  }
+}
 </style>

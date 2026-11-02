@@ -1,8 +1,8 @@
 <template>
   <Transition name="collection-drawer">
     <aside v-if="collectionStore.drawerOpen" class="collection-drawer"
-      :style="{ width: `${collectionStore.drawerWidth}px` }">
-      <div class="drawer-inner" :style="{ width: `${collectionStore.drawerWidth}px` }">
+      :style="{ width: collectionStore.drawerWidthCss }">
+      <div class="drawer-inner" :style="{ width: collectionStore.drawerWidthCss }">
         <div class="drawer-head">
           <div class="drawer-title-row">
             <div class="drawer-title">集锦</div>

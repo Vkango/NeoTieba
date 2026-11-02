@@ -179,7 +179,9 @@ const gridColumnsStyle = computed(() => {
   for (let i = 0; i < n; i++) {
     cols.push(tabStore.groups[i].hidden
       ? '0px'
-      : (useWeights ? `${Math.max(widths[i], SPLIT_MIN_PANE_WIDTH)}fr` : 'minmax(0, 1fr)'));
+      : (useWeights
+        ? `minmax(${SPLIT_MIN_PANE_WIDTH}px, ${Math.max(widths[i], SPLIT_MIN_PANE_WIDTH)}fr)`
+        : `minmax(${SPLIT_MIN_PANE_WIDTH}px, 1fr)`));
     if (i < n - 1) {
       const functional = !tabStore.groups[i].hidden && existsVisibleAfter(i);
       cols.push(functional ? `${SPLIT_DIVIDER_WIDTH}px` : '0px');
@@ -834,7 +836,7 @@ onMounted(async (): Promise<void> => {
 <template>
   <div id="container"
     :class="{ 'drawer-open': collectionStore.drawerOpen, 'drawer-resizing': collectionStore.resizing }"
-    :style="{ ...containerStyle, ...solidBackgroundStyle, '--collection-drawer-width': `${collectionStore.drawerWidth}px` }">
+    :style="{ ...containerStyle, ...solidBackgroundStyle, '--collection-drawer-width': collectionStore.drawerWidthCss }">
     <div id="container-overlay" :style="overlayStyle"></div>
     <div class="navi">
       <div class="navi-fixed">
@@ -965,7 +967,7 @@ onMounted(async (): Promise<void> => {
   position: absolute;
   right: 10px;
   top: 55px;
-  width: 320px;
+  width: min(320px, calc(100vw - 100px));
   background-color: rgba(var(--background-color), 0.2);
   padding: 0 10px;
   border-radius: 7px;
@@ -1082,6 +1084,9 @@ onMounted(async (): Promise<void> => {
   /* 显式钉在第 1 行：同列多个 pane 必须堆叠在同一格，
      否则 grid 自动放置会把后续 pane 挤到新行导致布局错乱 */
   grid-row: 1;
+  /* 分屏格级查询容器：页面根不是 Container 的页（如 ViewThread 看图模式）
+     用 @container pane (…) 取整格宽度 */
+  container: pane / inline-size;
 }
 
 /* 顶部标签栏：与内容区完全同宽同列模板，每个分屏的标签条与内容格左边对齐；
@@ -1121,10 +1126,10 @@ onMounted(async (): Promise<void> => {
   align-items: stretch;
 }
 
-/* 公摊：最后一个可见分屏的标签条在标题栏区域（右侧 330px）前截断，
+/* 公摊：最后一个可见分屏的标签条在标题栏区域（右侧 --titlebar-reserve）前截断，
    不压窗口按钮；其余分屏标签条仍与内容格左边对齐 */
 .tabs-bar-slot.last-visible {
-  margin-right: 330px;
+  margin-right: var(--titlebar-reserve, 330px);
 }
 
 .tabs-bar-gap {

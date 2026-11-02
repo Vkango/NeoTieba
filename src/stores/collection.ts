@@ -46,6 +46,8 @@ export const useCollectionStore = defineStore('collection', () => {
     const drawerOpen = ref(false);
     /** 分屏面板宽度（px） */
     const drawerWidth = ref(380);
+    /** 实际渲染宽度：窄窗口下封顶，内容区至少保留 320px（70px 导航栏之外） */
+    const drawerWidthCss = computed(() => `min(${drawerWidth.value}px, calc(100vw - 70px - 320px))`);
     /** 正在拖拽右缘尺寸调节器：内容区避让过渡临时禁用，保证实时跟随 */
     const resizing = ref(false);
 
@@ -200,6 +202,7 @@ export const useCollectionStore = defineStore('collection', () => {
         items,
         drawerOpen,
         drawerWidth,
+        drawerWidthCss,
         resizing,
         defaultGroup,
         orderedGroups,

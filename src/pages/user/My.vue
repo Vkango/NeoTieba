@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import { ref, onMounted, inject, type Ref } from 'vue';
+import { ref, computed, watch, onMounted, inject, type Ref } from 'vue';
 import { getCurrentUserBduss, getCurrentUserCookies } from '@/services/user-manage';
 import { useApiStore } from '@/stores';
 import { useCollectionStore } from '@/stores/collection';
 import UserReply from '@/components/reply/UserReply.vue';
+import Container from '@/components/common/Container.vue';
+import { useNarrowLayout } from '@/composables/useNarrowLayout';
 import { replaceEmoticonsWithImages } from '@/utils/emoticon2code';
 import type { ReplyItem, AtItem, TiebaUser } from '@/types/user';
 
@@ -20,6 +22,7 @@ interface Emits {
   (e: 'openHistory'): void;
   (e: 'openLibrary'): void;
   (e: 'openUser', uid: string): void;
+  (e: 'openBar', name: string): void;
   (e: 'openThread', id: string | number): void;
   (e: 'setTabInfo', info: { key: string | number; title: string; icon: string }): void;
 }
@@ -38,6 +41,27 @@ const isThreadsLoading = ref<boolean>(true);
 const atReplyPage = ref<boolean>(true);
 const uid = ref<string>('');
 const hasMore = ref<boolean>(true);
+
+// 窄内容区：快捷入口改为纵向入口列表；收藏/历史/归档仍与宽内容区一致开新标签，
+// 只有本页自带的“消息”区以页内二级页打开
+const containerRef = ref<InstanceType<typeof Container> | null>(null);
+const { isNarrow } = useNarrowLayout(() => containerRef.value?.getScrollElement() ?? null);
+const messagesOpen = ref(false);
+const subOpen = computed(() => isNarrow.value && messagesOpen.value);
+watch(isNarrow, narrow => { if (!narrow) messagesOpen.value = false; });
+
+interface MyEntry { id: string; icon: string; label: string; sub?: boolean; action: () => void }
+const entries = computed<MyEntry[]>(() => [
+  { id: 'favourite', icon: 'favorite', label: '收藏', action: () => emit('openFavourite') },
+  { id: 'history', icon: 'history', label: '历史', action: () => emit('openHistory') },
+  { id: 'library', icon: 'inventory_2', label: '归档', action: () => emit('openLibrary') },
+  { id: 'messages', icon: 'forum', label: '消息', sub: true, action: () => { messagesOpen.value = true; } },
+  { id: 'collection', icon: 'collections_bookmark', label: '集锦', action: () => collectionStore.toggleDrawer() },
+  { id: 'home', icon: 'gesture', label: '主页', action: () => emit('openUser', uid.value) },
+  { id: 'service', icon: 'medical_services', label: '服务', action: () => undefined },
+  { id: 'incognito', icon: 'footprint', label: '无痕', action: () => undefined },
+  { id: 'dnd', icon: 'dark_mode', label: '勿扰', action: () => undefined },
+]);
 
 // API 实例
 const apiStore = useApiStore();
@@ -173,39 +197,61 @@ const history = (): void => {
 </script>
 
 <template>
-  <Container :tab-key="props.key_" :scroll-key="`my-${props.key_}`" @yscroll="onScroll">
+  <Container ref="containerRef" :tab-key="props.key_" :scroll-key="`my-${props.key_}`" @yscroll="onScroll">
     <transition name="fade1">
-      <div v-if="!isLoading">
-        <div class="bar-banner">
-          <div class="image-container">
-            <img class="background-image"
-              :src="'https://gss0.bdstatic.com/6LZ1dD3d1sgCo2Kml5_Y_D3/sys/portrait/item/' + returnData.user.portrait"
-              referrerpolicy="no-referrer">
-          </div>
-          <div class="banner-content">
-            <RemoteImage kind="avatars" class="avatar"
-              :src="'https://gss0.bdstatic.com/6LZ1dD3d1sgCo2Kml5_Y_D3/sys/portrait/item/' + returnData.user.portrait"
-              referrerpolicy="no-referrer"
-              @click="openImageViewer && openImageViewer('https://gss0.bdstatic.com/6LZ1dD3d1sgCo2Kml5_Y_D3/sys/portrait/item/' + returnData.user.portrait)" />
-            <div>
-              <div class="title">{{ returnData.user.name_show }} ({{ returnData.user.name }})
-                <RippleButton style="padding: 4px; border-radius: 50%; background: transparent; box-shadow: none; vertical-align: middle;"
-                  @click="handleShare" title="生成分享卡片">
-                  <span class="material-symbols-outlined" style="font-size: 20px;">share</span>
-                </RippleButton>
-              </div>
-              <div class="description">{{ returnData.user.intro }}</div>
-              <div class="tags">
-                <Tag>吧龄：{{ returnData.user.tb_age }}年</Tag>
-                <Tag>发帖：{{ returnData.user.post_num }}</Tag>
-                <Tag>获赞：{{ returnData.user.total_agree_num }}</Tag>
-                <Tag>{{ returnData.user.sex == 1 ? '♂' : '♀' }}</Tag>
-                <Tag>IP属地：{{ returnData.user.ip_address == '' ? '未知' : returnData.user.ip_address }}</Tag>
+      <div v-if="!isLoading" class="my-root">
+        <!-- 窄内容区“消息”二级页顶栏 -->
+        <div v-if="subOpen" class="sub-head">
+          <RippleButton class="sub-back" title="返回" @click="messagesOpen = false">
+            <span class="material-symbols-outlined">arrow_back</span>
+          </RippleButton>
+          <span class="sub-title">消息</span>
+        </div>
+
+        <template v-if="!subOpen">
+          <div class="bar-banner">
+            <div class="image-container">
+              <img class="background-image"
+                :src="'https://gss0.bdstatic.com/6LZ1dD3d1sgCo2Kml5_Y_D3/sys/portrait/item/' + returnData.user.portrait"
+                referrerpolicy="no-referrer">
+            </div>
+            <div class="banner-content">
+              <RemoteImage kind="avatars" class="avatar"
+                :src="'https://gss0.bdstatic.com/6LZ1dD3d1sgCo2Kml5_Y_D3/sys/portrait/item/' + returnData.user.portrait"
+                referrerpolicy="no-referrer"
+                @click="openImageViewer && openImageViewer('https://gss0.bdstatic.com/6LZ1dD3d1sgCo2Kml5_Y_D3/sys/portrait/item/' + returnData.user.portrait)" />
+              <div>
+                <div class="title">{{ returnData.user.name_show }} ({{ returnData.user.name }})
+                  <RippleButton style="padding: 4px; border-radius: 50%; background: transparent; box-shadow: none; vertical-align: middle;"
+                    @click="handleShare" title="生成分享卡片">
+                    <span class="material-symbols-outlined" style="font-size: 20px;">share</span>
+                  </RippleButton>
+                </div>
+                <div class="description">{{ returnData.user.intro }}</div>
+                <HorizontalMaskScroll class="tags">
+                  <Tag>吧龄：{{ returnData.user.tb_age }}年</Tag>
+                  <Tag>发帖：{{ returnData.user.post_num }}</Tag>
+                  <Tag>获赞：{{ returnData.user.total_agree_num }}</Tag>
+                  <Tag>{{ returnData.user.sex == 1 ? '♂' : '♀' }}</Tag>
+                  <Tag>IP属地：{{ returnData.user.ip_address == '' ? '未知' : returnData.user.ip_address }}</Tag>
+                </HorizontalMaskScroll>
               </div>
             </div>
           </div>
-        </div>
-        <div class="pinned-thread-list">
+
+          <!-- 窄内容区：纵向入口列表 -->
+          <div v-if="isNarrow" class="entry-list">
+            <RippleButton v-for="entry in entries" :key="entry.id" class="entry" @click="entry.action">
+              <div class="entry-inner">
+                <span class="material-symbols-outlined">{{ entry.icon }}</span>
+                <span class="entry-label">{{ entry.label }}</span>
+                <span v-if="entry.sub" class="material-symbols-outlined entry-chevron">chevron_right</span>
+              </div>
+            </RippleButton>
+          </div>
+
+          <!-- 宽内容区：快捷入口按钮行 -->
+          <div v-else class="pinned-thread-list">
           <RippleButton class="my-btn">
             <div class="button-content" @click="emit('openFavourite')"><span
                 class="material-symbols-outlined">favorite</span>收藏</div>
@@ -238,10 +284,13 @@ const history = (): void => {
             <div class="button-content"><span class="material-symbols-outlined">dark_mode</span>勿扰</div>
           </RippleButton>
 
-        </div>
-        <div style="width: 80%; margin: 0 auto;">
+          </div>
+        </template>
 
-          <div style="display: flex; gap: 20px; margin-bottom: 10px; margin-top: 40px; align-items: center;">
+        <!-- 消息区：宽内容区常驻；窄内容区仅作为“消息”二级页展示 -->
+        <div v-if="!isNarrow || messagesOpen" class="message-section">
+
+          <div class="message-head">
             <div style="font-size: 18px; font-weight: bold;">消息</div>
             <div style="margin-left: auto;">
               <RippleButton class="filter-button" :class="{ selected: atReplyPage }"
@@ -291,6 +340,57 @@ const history = (): void => {
 </template>
 
 <style scoped>
+/* 窄内容区“消息”二级页顶栏 */
+.sub-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px 4px;
+}
+
+.sub-back {
+  display: inline-flex;
+  padding: 6px;
+  border-radius: 50%;
+  background: transparent;
+  box-shadow: none;
+}
+
+.sub-title {
+  font-size: 16px;
+  font-weight: bold;
+}
+
+.entry-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+}
+
+.entry {
+  width: 100%;
+  padding: 12px 14px;
+  text-align: left;
+  background-color: rgba(var(--text-color), 0.04);
+  box-shadow: none;
+}
+
+.entry-inner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.entry-label {
+  flex: 1;
+  min-width: 0;
+}
+
+.entry-chevron {
+  opacity: 0.4;
+}
+
 .button-content {
   display: flex;
   gap: 10px;
@@ -309,6 +409,20 @@ const history = (): void => {
 .thread-filter {
   width: 80%;
   margin: 0 auto;
+}
+
+.message-section {
+  width: 80%;
+  margin: 0 auto;
+}
+
+.message-head {
+  display: flex;
+  gap: 20px;
+  margin-bottom: 10px;
+  margin-top: 40px;
+  align-items: center;
+  flex-wrap: wrap;
 }
 
 .thread-list {
@@ -344,12 +458,27 @@ const history = (): void => {
   opacity: 0.5;
 }
 
+/* 横幅：背景图绝对定位铺底，内容走常规流，横幅随内容撑高（至少 200px），
+   窄内容区标题/标签换行变高时不会盖住下方入口列表 */
 .banner-content {
-  position: absolute;
-  top: 60px;
-  padding: 15px 45px;
+  position: relative;
+  box-sizing: border-box;
+  padding: 75px 45px 15px;
   display: flex;
   gap: 30px;
+}
+
+.banner-content > div {
+  min-width: 0;
+}
+
+.image-container {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 300px;
+  pointer-events: none;
 }
 
 .bar-banner .background-image {
@@ -372,7 +501,7 @@ const history = (): void => {
 
 .bar-banner {
   width: 100%;
-  height: 200px;
+  min-height: 200px;
   position: relative;
 }
 </style>

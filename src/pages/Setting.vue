@@ -1,5 +1,7 @@
 <script setup lang="ts">
-import { onMounted, ref, computed, inject, type ComputedRef, type Ref } from 'vue';
+import { onMounted, ref, computed, inject, watch, type ComputedRef, type Ref } from 'vue';
+import Container from '@/components/common/Container.vue';
+import { useNarrowLayout } from '@/composables/useNarrowLayout';
 import { getUserList, type User } from '@/services/user-manage';
 import type { SettingItem, MenuSettingItem, InfoItem } from '@/types/settings';
 import { useSettingsStore, type ThreadSaveDefaults } from '@/stores/settings';
@@ -111,6 +113,20 @@ const pluginSettings: Ref<MenuSettingItem[]> = ref([{
 }]);
 
 pluginSettings.value = [];
+
+// 窄内容区：左侧分类栏变为入口列表，点选后在页内进入该分类（二级页），返回回到入口列表；
+// 宽内容区保持左右双栏
+const containerRef = ref<InstanceType<typeof Container> | null>(null);
+const { isNarrow } = useNarrowLayout(() => containerRef.value?.getScrollElement() ?? null);
+const narrowOpen = ref(false);
+const subOpen = computed(() => isNarrow.value && narrowOpen.value);
+const currentTitle = computed(() =>
+  [...generalSettingItems.value, ...pluginSettings.value].find(item => item.id === currentPage.value)?.title ?? '设置');
+const selectCategory = (id: number): void => {
+  currentPage.value = id;
+  narrowOpen.value = true;
+};
+watch(isNarrow, narrow => { if (!narrow) narrowOpen.value = false; });
 
 const currentSettingItems = computed<InfoItem[]>(() => [
   { title: 'NeoTieba', icon: 'rocket', desc: `${__APP_VERSION__} · 构建 ${new Date(__BUILD_TIME__).toLocaleString('zh-CN')} · ${__BUILD_COMMIT__.slice(0, 8)}`, id: 7 },
@@ -364,14 +380,22 @@ const onScroll = (_target: HTMLElement): void => {
 </script>
 
 <template>
-  <Container class="page" :tab-key="props.key_" :scroll-key="`setting-${props.key_}`" @yscroll="onScroll">
-    <div style="width: 80%; margin: 0 auto; padding-top: 20px;">
+  <Container ref="containerRef" class="page" :tab-key="props.key_" :scroll-key="`setting-${props.key_}`" @yscroll="onScroll">
+    <div class="setting-page" :class="{ narrow: isNarrow }">
 
-      <div style="display: flex; gap: 15px; margin-top: 10px;">
+      <!-- 窄内容区二级页顶栏 -->
+      <div v-if="subOpen" class="sub-head">
+        <RippleButton class="sub-back" title="返回" @click="narrowOpen = false">
+          <span class="material-symbols-outlined">arrow_back</span>
+        </RippleButton>
+        <span class="sub-title">{{ currentTitle }}</span>
+      </div>
 
-        <div style="display: flex; flex-direction: column; width: 25%; min-width: 200px; gap: 10px">
+      <div class="setting-layout">
+
+        <div v-if="!subOpen" class="setting-nav">
           <!-- 用户信息区域 -->
-          <div style="margin-bottom: 10px; display: flex; align-items: center; gap: 10px">
+          <div class="setting-user">
             <RippleButton
               style="background-color: transparent; box-shadow: none; padding: 0; width: 100%; min-width: 200px;"
               @click="openUserManage">
@@ -407,27 +431,27 @@ const onScroll = (_target: HTMLElement): void => {
           </div>
 
           <div class="filter-button" style="padding: 0 8px">通用</div>
-          <RippleButton v-for="item in generalSettingItems" :key="item.id" class="filter-button"
-            :class="{ selected: item.id === currentPage }" @click="currentPage = item.id"
-            style="box-shadow: none; padding: 6px 8px; justify-self: right; font-size: 14px;opacity: 1;">
-            <div style="display: flex; gap: 10px; align-items: center;">
+          <RippleButton v-for="item in generalSettingItems" :key="item.id" class="filter-button nav-item"
+            :class="{ selected: item.id === currentPage && !isNarrow }" @click="selectCategory(item.id)">
+            <div class="nav-item-inner">
               <img :src="item.icon" width="16px" class="icon_">
-              <span>{{ item.title }}</span>
+              <span class="nav-item-title">{{ item.title }}</span>
+              <span v-if="isNarrow" class="material-symbols-outlined nav-item-chevron">chevron_right</span>
             </div>
           </RippleButton>
           <div v-if="pluginSettings.length" class="filter-button" style="padding: 0 8px">插件</div>
-          <RippleButton v-for="item in pluginSettings" :key="item.id" class="filter-button"
-            :class="{ selected: item.id === currentPage }" @click="currentPage = item.id"
-            style="box-shadow: none; padding: 6px 8px; justify-self: right; font-size: 14px; opacity: 1;">
-            <div style="display: flex; gap: 10px; align-items: center;">
+          <RippleButton v-for="item in pluginSettings" :key="item.id" class="filter-button nav-item"
+            :class="{ selected: item.id === currentPage && !isNarrow }" @click="selectCategory(item.id)">
+            <div class="nav-item-inner">
               <img :src="item.icon" width="16px" class="icon_">
-              <span>{{ item.title }}</span>
+              <span class="nav-item-title">{{ item.title }}</span>
+              <span v-if="isNarrow" class="material-symbols-outlined nav-item-chevron">chevron_right</span>
             </div>
           </RippleButton>
         </div>
 
-        <!-- 设置内容区域 -->
-        <div style="width: 100%;">
+        <!-- 设置内容区域：窄内容区仅在进入某分类后显示 -->
+        <div v-if="!isNarrow || subOpen" class="setting-body">
           <p v-if="actionError || settingsStore.settingsError || proxyError" role="alert">{{ actionError ||
             settingsStore.settingsError || proxyError }}</p>
           <!-- 显示设置 -->
@@ -538,6 +562,105 @@ const onScroll = (_target: HTMLElement): void => {
 </template>
 
 <style scoped>
+.setting-page {
+  width: 80%;
+  margin: 0 auto;
+  padding-top: 20px;
+}
+
+.setting-layout {
+  display: flex;
+  gap: 15px;
+  margin-top: 10px;
+}
+
+.setting-nav {
+  display: flex;
+  flex-direction: column;
+  width: 25%;
+  min-width: 200px;
+  gap: 10px;
+}
+
+.setting-user {
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.setting-body {
+  width: 100%;
+  min-width: 0;
+}
+
+.nav-item {
+  box-shadow: none;
+  padding: 6px 8px;
+  font-size: 14px;
+  opacity: 1;
+}
+
+.nav-item-inner {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.nav-item-title {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+}
+
+.nav-item-chevron {
+  font-size: 18px;
+  opacity: 0.4;
+}
+
+.sub-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.sub-back {
+  display: inline-flex;
+  padding: 6px;
+  border-radius: 50%;
+  background: transparent;
+  box-shadow: none;
+}
+
+.sub-title {
+  font-size: 16px;
+  font-weight: bold;
+}
+
+/* 窄内容区：分类栏变为纵向入口列表（二级页模式），内容区进入分类后才显示 */
+@container page (max-width: 720px) {
+  .setting-layout {
+    flex-direction: column;
+  }
+
+  .setting-nav {
+    width: 100%;
+    min-width: 0;
+    gap: 6px;
+  }
+
+  .setting-user {
+    margin-bottom: 4px;
+  }
+
+  .nav-item {
+    width: 100%;
+    padding: 12px 14px;
+    background-color: rgba(var(--text-color), 0.04);
+  }
+}
+
 .media-setting-group {
   display: flex;
   flex-direction: column;

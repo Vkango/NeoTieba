@@ -19,6 +19,21 @@
     --wallpaper-overlay: 255, 255, 255;
     --invert: 1;
     --blur-value: 20px;
+    /* 右上角标题栏保留区（拖动区 + 头像/标签按钮 + 窗口控制按钮），
+       index.html 的 #decorum-titlebar 与 App.vue 最后一个分屏标签条共用 */
+    --titlebar-reserve: 330px;
+}
+
+/* 响应式断点约定（container query 不能引用变量，各处字面量以此为准）：
+   - narrow  ≤ 720px：双栏折叠为纵向堆叠（容器仍保持原有 80% 居中留白，不在断点处突变）
+   - compact ≤ 480px：横幅/工具行紧凑化，隐藏次要信息
+   - 吧信息面板沿用历史值 900px
+   查询容器：`page`（Container.vue 内容滚动区）、`pane`（App.vue 分屏格）。
+   窗口 chrome（标题栏/导航栏）按窗口宽度走 @media，其余一律 @container。 */
+@media (max-width: 900px) {
+    :root {
+        --titlebar-reserve: 290px;
+    }
 }
 
 :root.dark {
@@ -291,9 +306,8 @@ button:active {
 .tabs {
     position: fixed;
     top: 0px;
-    /* 400px = 330px 标题栏(拖动区+头像/标签按钮+窗口控制) + 70px 侧边栏，
-       保证标签过多时右侧仍有可拖动空隙 */
-    width: calc(100% - 400px);
+    /* 70px 侧边栏 + 标题栏保留区，保证标签过多时右侧仍有可拖动空隙 */
+    width: calc(100% - 70px - var(--titlebar-reserve));
     left: 70px;
     overflow-x: hidden;
     height: 47px;
@@ -374,7 +388,7 @@ button:active {
     padding-right: 10px;
     height: calc(100% - 50px);
     pointer-events: none;
-    width: 300px;
+    width: min(300px, calc(100vw - 90px));
 }
 
 .notification {
@@ -545,7 +559,7 @@ html.macos #container .container {
 html.macos .tabs {
     top: 33px;
     left: 70px;
-    width: calc(100% - 400px);
+    width: calc(100% - 70px - var(--titlebar-reserve));
 }
 
 /* 灵动岛风格提示胶囊（全局通用）：与看图模式顶部 island-bar 同款式样。

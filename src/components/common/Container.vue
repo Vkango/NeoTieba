@@ -28,12 +28,15 @@ const identityKey = computed(() => {
 
 const storageKey = computed(() => identityKey.value ? `scrollPosition:${identityKey.value}` : '');
 // 分屏下「激活」以所在分屏组的当前页为准，而非全局聚焦标签——
-// 两个分屏同时可见时，各自的滚动恢复互不干扰
+// 两个分屏同时可见时，各自的滚动恢复互不干扰。
+// 嵌入在其他页面里的子页面（如“我的”窄屏二级页）没有对应标签，视为始终激活。
 const isActiveTab = computed(() => {
   if (props.tabKey === undefined || props.tabKey === null) {
     return true;
   }
-  return tabStore.isTabKeyVisibleInPane(String(props.tabKey));
+  const key = String(props.tabKey);
+  if (!tabStore.getTab(key)) return true;
+  return tabStore.isTabKeyVisibleInPane(key);
 });
 
 function getSavedPosition(): number {
@@ -169,5 +172,8 @@ onBeforeUnmount(() => {
   overflow-y: auto;
   overflow-x: hidden;
   border-radius: 5px;
+  /* 页面级查询容器：各页/组件以 @container page (max-width: …) 按
+     实际内容区宽度（而非窗口宽度）折叠布局，分屏下的窄格才会正确响应 */
+  container: page / inline-size;
 }
 </style>

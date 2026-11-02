@@ -68,7 +68,7 @@ function formatTime(timestamp: number): string {
 
       <div v-else class="history-list">
         <RippleButton v-for="item in historyItems" :key="item.id" class="history-item" @click="openItem(item)">
-          <div style="display: flex; gap: 10px; align-items: center;">
+          <div class="history-row">
             <RemoteImage v-if="item.icon" class="item-icon-img" :src="item.icon" />
             <div class="item-main">
               <div class="item-title">{{ item.title }}</div>
@@ -94,6 +94,7 @@ function formatTime(timestamp: number): string {
   align-items: center;
   gap: 16px;
   margin-bottom: 18px;
+  flex-wrap: wrap;
 }
 
 .history-header h2 {
@@ -152,6 +153,14 @@ function formatTime(timestamp: number): string {
   display: flex;
   align-items: center;
   gap: 12px;
+}
+
+/* 撑满按钮内容区，标题才能在窄列正确省略 */
+.history-row {
+  width: 100%;
+  display: flex;
+  gap: 10px;
+  align-items: center;
 }
 
 .item-icon-img {

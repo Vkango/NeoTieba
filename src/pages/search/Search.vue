@@ -83,8 +83,7 @@ const onScroll = () => {
         <div class="result" v-if="searchType == 0 && searchResult">
           <div v-if="searchResult?.exactMatch?.avatar != undefined">
             <Tag>最佳匹配</Tag>
-            <div
-              style="margin-top: 10px; display: grid; gap: 10px 10px; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); align-items: start;">
+            <div class="card-grid">
               <button class="bar-button" data-kb-item @click="emit('openBar', searchResult.exactMatch.forum_name)">
                 <RemoteImage class="avatar" :src="searchResult.exactMatch.avatar" />
                 <div style="margin-left: 5px;">
@@ -97,8 +96,7 @@ const onScroll = () => {
 
           <div v-if="searchResult?.fuzzyMatch?.[0]?.avatar != undefined">
             <Tag>相关匹配</Tag>
-            <div
-              style="margin-top: 10px; display: grid; gap: 10px 10px; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); align-items: start;">
+            <div class="card-grid">
               <button class="bar-button" data-kb-item v-for="item in searchResult?.fuzzyMatch"
                 @click="emit('openBar', item.forum_name)">
                 <RemoteImage class="avatar" :src="item.avatar" />
@@ -124,8 +122,7 @@ const onScroll = () => {
         <div class="result" v-if="searchType == 2 && searchResult">
           <div v-if="searchResult?.exactMatch?.id != undefined">
             <Tag>最佳匹配</Tag>
-            <div
-              style="margin-top: 10px; display: grid; gap: 10px 10px; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); align-items: start;">
+            <div class="card-grid">
               <button class="bar-button" @click="emit('openUser', searchResult.exactMatch.id)">
                 <RemoteImage class="avatar" :src="searchResult.exactMatch.portrait" />
                 <div style="margin-left: 5px;">
@@ -137,8 +134,7 @@ const onScroll = () => {
           </div>
           <div v-if="searchResult?.fuzzyMatch?.[0]?.id != undefined">
             <Tag>相关匹配</Tag>
-            <div
-              style="margin-top: 10px; display: grid; gap: 10px 10px; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); align-items: start;">
+            <div class="card-grid">
               <button class="bar-button" v-for="item in searchResult.fuzzyMatch"
                 @click="emit('openUser', item.id)">
                 <RemoteImage class="avatar" :src="item.portrait" />
@@ -178,6 +174,17 @@ const onScroll = () => {
   height: 30px;
   line-height: 30px;
   overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* 卡片网格：轨道下限不超过容器宽，窄列时单列铺满而非撑破 */
+.card-grid {
+  margin-top: 10px;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr));
+  align-items: start;
 }
 
 .bar-button {
@@ -227,6 +234,7 @@ const onScroll = () => {
   margin-bottom: 10px;
   display: flex;
   gap: 10px;
+  flex-wrap: wrap;
 }
 
 .list-title {

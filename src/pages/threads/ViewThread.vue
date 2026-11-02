@@ -109,14 +109,24 @@ const currentPage = ref<number>(1);
 const galleryOpen = ref(false);
 const viewElement = ref<HTMLElement>();
 const viewWidth = ref(1000);
+const viewHeight = ref(600);
 const contextCollapsed = ref(false);
 const preferredContextWidth = ref<number>();
+const preferredContextHeight = ref<number>();
 const resizing = ref(false);
 let viewObserver: ResizeObserver | undefined;
 const minimumPanelWidth = computed(() => Math.min(240, viewWidth.value * .4));
 const maximumPanelWidth = computed(() => Math.max(minimumPanelWidth.value, viewWidth.value - minimumPanelWidth.value - 10));
 const contextWidth = computed(() => contextCollapsed.value ? 0 : Math.max(minimumPanelWidth.value,
   Math.min(maximumPanelWidth.value, preferredContextWidth.value ?? Math.min(420, viewWidth.value * .44))));
+// 窄分屏格里看图：图片与回复区改为上下堆叠（与 global.css 的 narrow 断点一致）。
+// 以 JS 量到的 viewWidth 为唯一依据，拖动方向与 CSS 布局不会在边界上错位。
+const STACKED_BREAKPOINT = 720;
+const isStacked = computed(() => galleryOpen.value && viewWidth.value <= STACKED_BREAKPOINT);
+const minimumPanelHeight = computed(() => Math.min(200, viewHeight.value * .35));
+const maximumPanelHeight = computed(() => Math.max(minimumPanelHeight.value, viewHeight.value - minimumPanelHeight.value - 10));
+const contextHeight = computed(() => contextCollapsed.value ? 0 : Math.max(minimumPanelHeight.value,
+  Math.min(maximumPanelHeight.value, preferredContextHeight.value ?? Math.round(viewHeight.value * .5))));
 
 function captureLayoutAnchor() {
   updateReadingPosition();
@@ -147,8 +157,14 @@ function startResize(event: PointerEvent) {
 function moveResize(event: PointerEvent) {
   if (!resizing.value || !viewElement.value) return;
   contextCollapsed.value = false;
-  preferredContextWidth.value = Math.max(minimumPanelWidth.value,
-    Math.min(maximumPanelWidth.value, viewElement.value.getBoundingClientRect().right - event.clientX - 5));
+  const bounds = viewElement.value.getBoundingClientRect();
+  if (isStacked.value) {
+    preferredContextHeight.value = Math.max(minimumPanelHeight.value,
+      Math.min(maximumPanelHeight.value, bounds.bottom - event.clientY - 5));
+  } else {
+    preferredContextWidth.value = Math.max(minimumPanelWidth.value,
+      Math.min(maximumPanelWidth.value, bounds.right - event.clientX - 5));
+  }
   void nextTick(restoreLayoutAnchor);
 }
 function endResize() {
@@ -157,13 +173,21 @@ function endResize() {
   settleLayout();
 }
 function resizeWithKeyboard(event: KeyboardEvent) {
-  if (event.target !== event.currentTarget || !['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+  const growKey = isStacked.value ? 'ArrowUp' : 'ArrowLeft';
+  const shrinkKey = isStacked.value ? 'ArrowDown' : 'ArrowRight';
+  if (event.target !== event.currentTarget || ![growKey, shrinkKey, 'Home', 'End'].includes(event.key)) return;
   event.preventDefault();
   captureLayoutAnchor();
-  const width = event.key === 'Home' ? minimumPanelWidth.value : event.key === 'End' ? maximumPanelWidth.value
-    : contextWidth.value + (event.key === 'ArrowLeft' ? 24 : -24);
   contextCollapsed.value = false;
-  preferredContextWidth.value = Math.max(minimumPanelWidth.value, Math.min(maximumPanelWidth.value, width));
+  if (isStacked.value) {
+    const height = event.key === 'Home' ? minimumPanelHeight.value : event.key === 'End' ? maximumPanelHeight.value
+      : contextHeight.value + (event.key === growKey ? 24 : -24);
+    preferredContextHeight.value = Math.max(minimumPanelHeight.value, Math.min(maximumPanelHeight.value, height));
+  } else {
+    const width = event.key === 'Home' ? minimumPanelWidth.value : event.key === 'End' ? maximumPanelWidth.value
+      : contextWidth.value + (event.key === growKey ? 24 : -24);
+    preferredContextWidth.value = Math.max(minimumPanelWidth.value, Math.min(maximumPanelWidth.value, width));
+  }
   settleLayout();
 }
 const galleryOnlyAuthor = ref(false);
@@ -666,8 +690,10 @@ watch(() => [threadList.value.length, isLoading.value], async () => {
 onMounted(async () => {
   if (viewElement.value) {
     viewWidth.value = viewElement.value.clientWidth;
+    viewHeight.value = viewElement.value.clientHeight;
     viewObserver = new ResizeObserver(() => {
       viewWidth.value = viewElement.value?.clientWidth ?? viewWidth.value;
+      viewHeight.value = viewElement.value?.clientHeight ?? viewHeight.value;
       restoreLayoutAnchor();
     });
     viewObserver.observe(viewElement.value);
@@ -718,12 +744,12 @@ const nextPage = async (): Promise<void> => {
 
 <template>
   <div ref="viewElement" class="thread-view"
-    :class="{ compact: props.compact || galleryOpen, 'gallery-open': galleryOpen, 'context-collapsed': contextCollapsed, resizing }"
-    :style="{ '--context-width': contextWidth + 'px' }" @keydown.esc="isJumpOpen = false">
+    :class="{ compact: props.compact || galleryOpen, 'gallery-open': galleryOpen, 'context-collapsed': contextCollapsed, resizing, stacked: isStacked }"
+    :style="{ '--context-width': contextWidth + 'px', '--context-height': contextHeight + 'px' }" @keydown.esc="isJumpOpen = false">
     <section class="gallery-stage" aria-label="帖子图片" :aria-hidden="!galleryOpen" :inert="!galleryOpen || undefined">
       <ImageViewer v-if="galleryOpen && selectedImage" :image-src="offlineResolver(selectedImage.src)"
         :fallback-src="selectedImage.src"
-        :content-width="Math.max(1, viewWidth - contextWidth - 10)" visible embedded>
+        :content-width="isStacked ? viewWidth : Math.max(1, viewWidth - contextWidth - 10)" visible embedded>
         <template #gallery-island>
           <div v-if="islandPost" class="gallery-island">
             <RemoteImage kind="avatars" class="island-avatar" :src="islandAvatar" :alt="islandAuthorName" />
@@ -775,13 +801,17 @@ const nextPage = async (): Promise<void> => {
       </div>
     </section>
     <div class="gallery-spacer" aria-hidden="true"></div>
-    <div v-if="galleryOpen" class="gallery-splitter" role="separator" aria-label="调整图片与回复区域宽度"
-      aria-orientation="vertical" tabindex="0" :aria-valuenow="Math.round(contextWidth)" :aria-valuemin="0"
-      :aria-valuemax="Math.round(maximumPanelWidth)" @pointerdown="startResize" @pointermove="moveResize"
+    <div v-if="galleryOpen" class="gallery-splitter" role="separator"
+      :aria-label="isStacked ? '调整图片与回复区域高度' : '调整图片与回复区域宽度'"
+      :aria-orientation="isStacked ? 'horizontal' : 'vertical'" tabindex="0"
+      :aria-valuenow="Math.round(isStacked ? contextHeight : contextWidth)" :aria-valuemin="0"
+      :aria-valuemax="Math.round(isStacked ? maximumPanelHeight : maximumPanelWidth)" @pointerdown="startResize" @pointermove="moveResize"
       @pointerup="endResize" @pointercancel="endResize" @lostpointercapture="endResize" @keydown="resizeWithKeyboard">
       <button type="button" class="context-toggle" :aria-label="contextCollapsed ? '展开回复区域' : '收起回复区域'"
         :title="contextCollapsed ? '展开回复区域' : '收起回复区域'" :aria-expanded="!contextCollapsed" @click.stop="toggleContext">
-        <span class="material-symbols-outlined">{{ contextCollapsed ? 'chevron_left' : 'chevron_right' }}</span>
+        <span class="material-symbols-outlined">{{ isStacked
+          ? (contextCollapsed ? 'keyboard_arrow_up' : 'keyboard_arrow_down')
+          : (contextCollapsed ? 'chevron_left' : 'chevron_right') }}</span>
       </button>
     </div>
     <section class="thread-context" :aria-hidden="galleryOpen && contextCollapsed"
@@ -792,27 +822,20 @@ const nextPage = async (): Promise<void> => {
           <div v-if="!isLoading">
             <div class="thread-list" v-if="threadList.length" ref="captureRef">
               <h3 class="thread-title">
-                <div style="display: flex; align-items: center; gap: 10px; margin-top: 10px;">
-                  <RippleButton v-if="returnData.data"
-                    style="background-color: transparent; box-shadow: none; padding: 0; border-radius: 100px;"
-                    @click="openBar(returnData.data.forum.name)">
-                    <div
-                      style="display: flex; align-items: center; gap: 10px; background-color: rgba(var(--text-color), 0.1); padding: 5px 8px;">
-                      <RemoteImage :src="returnData.data.forum.avatar" class="avatar" />
-                      <span style="font-size: 14px; margin-right: 5px;">{{ returnData.data.forum.name }}吧</span>
-                    </div>
-                  </RippleButton>
-                  {{ threadTitle }}
-                  <RippleButton style="padding: 4px; border-radius: 50%; background: transparent; box-shadow: none;"
-                    @click="handleShare" title="生成分享卡片">
-                    <span class="material-symbols-outlined" style="font-size: 20px;">share</span>
-                  </RippleButton>
-                  <RippleButton style="padding: 4px; border-radius: 50%; background: transparent; box-shadow: none;"
-                    @click="openSaveDialog" :title="props.local ? '继续保存本帖归档' : '保存帖子'" :disabled="isSaving">
-                    <span class="material-symbols-outlined" style="font-size: 20px;">{{ props.local ?
-                      'content_paste_search' : 'save' }}</span>
-                  </RippleButton>
-                </div>
+                <RippleButton v-if="returnData.data" class="forum-chip" @click="openBar(returnData.data.forum.name)">
+                  <div class="forum-chip-inner">
+                    <RemoteImage :src="returnData.data.forum.avatar" class="avatar" />
+                    <span>{{ returnData.data.forum.name }}吧</span>
+                  </div>
+                </RippleButton>
+                <span class="title-text">{{ threadTitle }}</span>
+                <RippleButton class="title-action" @click="handleShare" title="生成分享卡片">
+                  <span class="material-symbols-outlined">share</span>
+                </RippleButton>
+                <RippleButton class="title-action" @click="openSaveDialog"
+                  :title="props.local ? '继续保存本帖归档' : '保存帖子'" :disabled="isSaving">
+                  <span class="material-symbols-outlined">{{ props.local ? 'content_paste_search' : 'save' }}</span>
+                </RippleButton>
               </h3>
               <div v-for="item in visibleThreadList" :key="item.id" :ref="element => setPostElement(item.id, element)"
                 class="post-anchor"
@@ -999,6 +1022,66 @@ const nextPage = async (): Promise<void> => {
 .gallery-splitter:hover::before,
 .gallery-splitter:focus-visible::before {
   background: rgb(var(--primary-color));
+}
+
+/* 窄分屏格的看图模式：图片在上、回复在下，分隔条改为上下拖动 */
+.thread-view.stacked {
+  flex-direction: column;
+}
+
+.stacked .gallery-stage {
+  position: relative;
+  inset: auto;
+  flex: 0 0 calc(100% - var(--context-height) - 10px);
+  min-height: 0;
+  border-radius: 5px 5px 0 0;
+  transform: none;
+}
+
+.stacked .gallery-spacer {
+  display: none;
+}
+
+.stacked .gallery-splitter {
+  flex: 0 0 10px;
+  width: 100%;
+  cursor: row-resize;
+}
+
+.stacked.resizing {
+  cursor: row-resize;
+}
+
+.stacked .gallery-splitter::before {
+  top: 4px;
+  bottom: auto;
+  left: 0;
+  right: 0;
+  width: auto;
+  height: 2px;
+}
+
+.stacked .context-toggle {
+  top: -13px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 36px;
+  height: 30px;
+}
+
+.stacked.context-collapsed .context-toggle {
+  top: -23px;
+  left: 50%;
+}
+
+.stacked.gallery-open .thread-context {
+  flex: 0 0 var(--context-height);
+  margin: 0 10px 10px;
+}
+
+.stacked.context-collapsed.gallery-open .thread-context {
+  flex-basis: 0;
+  margin: 0;
 }
 
 .context-toggle {
@@ -1235,11 +1318,6 @@ const nextPage = async (): Promise<void> => {
   font-size: 16px;
 }
 
-.compact .thread-title>div {
-  flex-wrap: wrap;
-  overflow-wrap: anywhere;
-}
-
 .compact .thread-list {
   padding: 6px 12px;
 }
@@ -1344,11 +1422,66 @@ const nextPage = async (): Promise<void> => {
   background: rgba(var(--primary-color), 0.3);
 }
 
+/* 标题区与楼层卡片同宽（.thread 为 80%）。吧胶囊、标题文字、分享/保存按钮全部内联在同一段
+   文字流里，按钮跟在标题末尾随文字换行，始终完整可见；窄内容区时吧胶囊独占一行 */
 .thread-title {
   width: 80%;
   height: fit-content;
-  margin-top: 0;
+  margin-top: 10px;
   margin-bottom: 10px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  line-height: 1.6;
+}
+
+.forum-chip {
+  display: inline-flex;
+  vertical-align: middle;
+  margin-right: 6px;
+  background-color: transparent;
+  box-shadow: none;
+  padding: 0;
+  border-radius: 100px;
+}
+
+@container page (max-width: 720px) {
+  .forum-chip {
+    display: flex;
+    width: fit-content;
+    margin: 0 0 8px;
+  }
+}
+
+.forum-chip-inner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 8px;
+  background-color: rgba(var(--text-color), 0.1);
+  font-size: 14px;
+  font-weight: normal;
+}
+
+.forum-chip-inner span {
+  margin-right: 5px;
+}
+
+.title-text {
+  vertical-align: middle;
+}
+
+.title-action {
+  display: inline-flex;
+  vertical-align: middle;
+  padding: 4px;
+  margin-left: 4px;
+  border-radius: 50%;
+  background: transparent;
+  box-shadow: none;
+}
+
+.title-action .material-symbols-outlined {
+  font-size: 20px;
 }
 
 .avatar {

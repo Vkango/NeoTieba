@@ -50,7 +50,12 @@ errorService.addHandler(async (report) => {
 });
 
 // Catch errors outside Vue rendering: async callbacks and rejected promises.
+// ResizeObserver 的“loop completed with undelivered notifications”是浏览器在同一帧内
+// 观察目标尺寸被回调再次改动时的提示，下一帧会补发通知，不是真实错误，不进错误报告。
+const isResizeObserverLoopNotice = (message: unknown): boolean =>
+    typeof message === 'string' && message.startsWith('ResizeObserver loop');
 window.addEventListener('error', (event) => {
+    if (isResizeObserverLoopNotice(event.message)) return;
     errorService.handleError(event.error ?? event.message, undefined, 'window');
 });
 window.addEventListener('unhandledrejection', (event) => {

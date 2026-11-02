@@ -22,6 +22,7 @@ declare module 'vue' {
     Drawer: typeof import('./components/layout/Drawer.vue')['default']
     ErrorReport: typeof import('./components/notification/ErrorReport.vue')['default']
     ExternalLinkDialog: typeof import('./components/common/ExternalLinkDialog.vue')['default']
+    HorizontalMaskScroll: typeof import('./components/common/HorizontalMaskScroll.vue')['default']
     HotkeyHelp: typeof import('./components/common/HotkeyHelp.vue')['default']
     HotkeySettings: typeof import('./components/settings/HotkeySettings.vue')['default']
     ImageHoverPreview: typeof import('./components/common/ImageHoverPreview.vue')['default']

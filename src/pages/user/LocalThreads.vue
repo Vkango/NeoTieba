@@ -274,6 +274,12 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: 12px;
+  flex-wrap: wrap;
+}
+
+.library-search {
+  flex: 1 1 200px;
+  min-width: 0;
 }
 
 .library-title {
@@ -414,5 +420,17 @@ onBeforeUnmount(() => {
 .library-action.danger:hover {
   color: #e05656;
   background: rgba(224, 86, 86, 0.1);
+}
+
+/* 紧凑内容区：条目操作按钮换到第二行靠右，信息列独占整行 */
+@container page (max-width: 480px) {
+  .library-item {
+    flex-wrap: wrap;
+  }
+
+  .library-actions {
+    flex-basis: 100%;
+    justify-content: flex-end;
+  }
 }
 </style>

@@ -287,6 +287,7 @@ onBeforeUnmount(() => {
   gap: 5px;
   opacity: 0.5;
   align-items: center;
+  flex-wrap: wrap;
   width: fit-content;
 }
 

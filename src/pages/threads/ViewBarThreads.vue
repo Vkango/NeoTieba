@@ -114,7 +114,6 @@ const totalSignNum = ref<number>(0);
 const followDays = ref<number>(0);
 const myThreadNum = ref<number>(0);
 const dayPostNum = ref<number>(0);
-const isNarrowLayout = ref<boolean>(false);
 const shareCard = useShareCard();
 
 const handleShare = async () => {
@@ -599,20 +598,13 @@ const handleSignButtonClick = (): void => {
   }
 };
 
-const updateNarrowLayout = (): void => {
-  isNarrowLayout.value = window.innerWidth < 900;
-};
-
 onMounted(async (): Promise<void> => {
-  updateNarrowLayout();
-  window.addEventListener('resize', updateNarrowLayout);
   isLoading.value = true;
   await loadData();
   isLoading.value = false;
 });
 
 onBeforeUnmount((): void => {
-  window.removeEventListener('resize', updateNarrowLayout);
   forumAccentGeneration++;
   setForumAccentPair(null);
 });
@@ -651,17 +643,17 @@ onBeforeUnmount((): void => {
                 </div>
                 <span class="level-score"> ({{ levelScoreText }})</span>
               </div>
+              <RippleButton class="sign-button" :class="{ signed: signButtonState.signed }"
+                :style="signButtonState.signed ? {} : { backgroundColor: signButtonBackground }"
+                :disabled="isSignedIn || isSigning || isFollowing" @click.stop="handleSignButtonClick">
+                <span class="sign-main">{{ signButtonState.main }}</span>
+              </RippleButton>
             </div>
           </div>
-          <RippleButton class="sign-button" :class="{ signed: signButtonState.signed }"
-            :style="signButtonState.signed ? {} : { backgroundColor: signButtonBackground }"
-            :disabled="isSignedIn || isSigning || isFollowing" @click.stop="handleSignButtonClick">
-            <span class="sign-main">{{ signButtonState.main }}</span>
-          </RippleButton>
         </div>
 
         <div class="pinned-thread-list">
-          <div class="thread-filter">
+          <HorizontalMaskScroll class="thread-filter">
             <RippleButton class="filter-button" :class="{ active: isGoodOnly }"
               style="background-color: transparent; box-shadow: none; padding: 5px 10px; justify-self: right;"
               @click="toggleThreadScope">
@@ -696,7 +688,7 @@ onBeforeUnmount((): void => {
                 <span>吧信息</span>
               </div>
             </RippleButton>
-          </div>
+          </HorizontalMaskScroll>
 
           <div class="bar-info-panel-wrap" :class="{ expanded: barInfoExpanded }">
             <div class="bar-info-panel">
@@ -737,7 +729,7 @@ onBeforeUnmount((): void => {
                     </Tag>
                   </div>
 
-                  <div class="info-columns" :class="{ vertical: isNarrowLayout }">
+                  <div class="info-columns">
                     <div class="info-col my-bar-section">
                       <div class="section-title">我在本吧</div>
                       <template v-if="currentUser?.bduss">
@@ -846,10 +838,10 @@ onBeforeUnmount((): void => {
 </template>
 
 <style scoped>
+/* 筛选行：横向蒙版滚动，窄内容区下保持单行不换行 */
 .thread-filter {
   width: 80%;
   margin: 0 auto;
-  display: flex;
 }
 
 .filter-button {
@@ -978,31 +970,20 @@ onBeforeUnmount((): void => {
 .info-columns {
   display: flex;
   align-items: stretch;
-}
-
-.info-columns:not(.vertical) {
   gap: 24px;
-}
-
-.info-columns.vertical {
-  flex-direction: column;
-  gap: 10px;
 }
 
 .info-col {
   min-width: 0;
-}
-
-.info-columns:not(.vertical)>.info-col {
   flex: 1 1 0%;
 }
 
-.info-columns:not(.vertical)>.desc-section {
+.info-columns>.desc-section {
   position: relative;
   min-height: 0;
 }
 
-.info-columns:not(.vertical)>.desc-section>* {
+.info-columns>.desc-section>* {
   position: absolute;
   inset: 0;
   overflow-y: auto;
@@ -1023,9 +1004,26 @@ onBeforeUnmount((): void => {
   word-break: break-word;
 }
 
-.info-columns.vertical .bar-description-text {
-  max-height: 240px;
-  overflow-y: auto;
+/* 窄内容区：吧信息面板双栏改为上下排列，简介由绝对定位填充改回常规流并限高滚动 */
+@container page (max-width: 900px) {
+  .info-columns {
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .info-col {
+    flex: 0 1 auto;
+  }
+
+  .info-columns>.desc-section>* {
+    position: static;
+    overflow-y: visible;
+  }
+
+  .bar-description-text {
+    max-height: 240px;
+    overflow-y: auto;
+  }
 }
 
 .my-bar-section {
@@ -1333,12 +1331,27 @@ onBeforeUnmount((): void => {
   transition: width 0.2s ease;
 }
 
+/* 横幅：背景图绝对定位铺底，内容走常规流，横幅随内容撑高（至少 200px），
+   窄内容区标题换行变高时不会与下方筛选行重叠 */
 .banner-content {
-  position: absolute;
-  top: 60px;
-  padding: 15px 45px;
+  position: relative;
+  box-sizing: border-box;
+  padding: 75px 45px 15px;
   display: flex;
   gap: 30px;
+}
+
+.banner-content>div {
+  min-width: 0;
+}
+
+.image-container {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 300px;
+  pointer-events: none;
 }
 
 .bar-banner .background-image {
@@ -1367,7 +1380,7 @@ onBeforeUnmount((): void => {
 
 .bar-banner {
   width: 100%;
-  height: 200px;
+  min-height: 200px;
   position: relative;
 }
 
@@ -1409,5 +1422,15 @@ onBeforeUnmount((): void => {
   font-weight: 600;
   line-height: 1.2;
   white-space: nowrap;
+}
+
+/* 窄内容区：签到按钮不再绝对定位，作为信息列的最后一行排在等级信息下方
+   （须位于基础规则之后，@container 不提升优先级） */
+@container page (max-width: 720px) {
+  .sign-button {
+    position: static;
+    display: inline-flex;
+    margin-top: 10px;
+  }
 }
 </style>

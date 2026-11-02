@@ -186,6 +186,7 @@ const onScroll = (target: HTMLElement) => {
   margin-bottom: 10px;
   display: flex;
   gap: 10px;
+  flex-wrap: wrap;
 }
 
 .list-title {

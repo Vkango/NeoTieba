@@ -76,6 +76,7 @@ const isThreadsLoading = ref<boolean>(true);
 const FollowBarList: Ref<FollowBarItem[]> = ref([]);
 const currentPage = ref<number>(1);
 const hasMore = ref<boolean>(true);
+const userTab = ref<'replies' | 'bars'>('replies');
 
 // API实例
 const apiStore = useApiStore();
@@ -222,44 +223,55 @@ const onScroll = (target: any) => {
               </div>
               <div class="description" v-html="sanitize(returnData.user.intro == '' ? '没有签名喵' : returnData.user.intro)">
               </div>
-              <div class="tags">
-              <Tag>吧龄：{{ returnData.user.tb_age }}年</Tag>
-              <Tag>发帖：{{ returnData.user.post_num }}</Tag>
-              <Tag>获赞：{{ returnData.user.total_agree_num }}</Tag>
-              <Tag>{{ returnData.user.sex == 1 ? '♂' : '♀' }}</Tag>
+              <HorizontalMaskScroll class="tags" :gap="0">
+                <Tag>吧龄：{{ returnData.user.tb_age }}年</Tag>
+                <Tag>发帖：{{ returnData.user.post_num }}</Tag>
+                <Tag>获赞：{{ returnData.user.total_agree_num }}</Tag>
+                <Tag>{{ returnData.user.sex == 1 ? '♂' : '♀' }}</Tag>
                 <Tag>IP属地：{{ returnData.user.ip_address == '' ? '未知' : returnData.user.ip_address }}</Tag>
-              </div>
+              </HorizontalMaskScroll>
             </div>
           </div>
         </div>
 
         <div class="content">
-          <div style="width: 80%; display: flex;">
-            <div class="post-list">
-              <h3>回复</h3>
-              <div class="reply-list">
-                <div v-if="returnData2 == undefined">还没有回复</div>
-                <UserReply :uid="props.uid" @openThread="onThreadClicked(item.thread_id)" v-for="item in returnData2" msg=""
-                  :user_name="item.name_show + ' (' + item.user_name + ')'" :thread_title="item.title"
-                  :avatar="item.user_portrait" :media="item.content" :create_time="Number(item.create_time || 0)" :threadId="item.thread_id">
-                </UserReply>
-                <div v-if="!hasMore">到底了</div>
-              </div>
-            </div>
-            <div class="user-cards">
-              <div>
-                <h3>关注的吧</h3>
-                <div class="bar-buttons">
-                  <div class="bar-button" data-kb-item v-for="item in FollowBarList"
-                    @click="emit('openBar', item.forum_name)">
-                    <span class="bar-name">{{ item.forum_name }} </span>
-                    <span class="level"
-                      :class="{ 'color1': Number(item.level_id) >= 0 && Number(item.level_id) < 4, 'color2': Number(item.level_id) >= 4 && Number(item.level_id) < 10, 'color3': Number(item.level_id) >= 10 && Number(item.level_id) < 16, 'color4': Number(item.level_id) > 16 }">{{
-                        item.level_id }}</span>
-                  </div>
+          <div class="user-main">
+            <div class="user-tabs">
+              <RippleButton class="filter-button" :class="{ selected: userTab === 'replies' }"
+                style="background-color: transparent; box-shadow: none; padding: 5px 10px;"
+                @click="userTab = 'replies'">
+                <div style="display: flex; gap: 10px; align-items: center;">
+                  <img src="/assets/reply.svg" width="18px" class="icon_">
+                  <span>回复</span>
                 </div>
-                <div v-if="FollowBarList.length < 1">没有关注的吧</div>
+              </RippleButton>
+              <RippleButton class="filter-button" :class="{ selected: userTab === 'bars' }"
+                style="background-color: transparent; box-shadow: none; padding: 5px 10px;" @click="userTab = 'bars'">
+                <div style="display: flex; gap: 10px; align-items: center;">
+                  <img src="/assets/home.svg" width="18px" class="icon_">
+                  <span>关注的吧</span>
+                </div>
+              </RippleButton>
+            </div>
+            <div v-if="userTab === 'replies'" class="reply-list">
+              <div v-if="returnData2 == undefined">还没有回复</div>
+              <UserReply :uid="props.uid" @openThread="onThreadClicked(item.thread_id)" v-for="item in returnData2" msg=""
+                :user_name="item.name_show + ' (' + item.user_name + ')'" :thread_title="item.title"
+                :avatar="item.user_portrait" :media="item.content" :create_time="Number(item.create_time || 0)" :threadId="item.thread_id">
+              </UserReply>
+              <div v-if="!hasMore">到底了</div>
+            </div>
+            <div v-else class="bar-section">
+              <div class="bar-buttons">
+                <div class="bar-button" data-kb-item v-for="item in FollowBarList"
+                  @click="emit('openBar', item.forum_name)">
+                  <span class="bar-name">{{ item.forum_name }} </span>
+                  <span class="level"
+                    :class="{ 'color1': Number(item.level_id) >= 0 && Number(item.level_id) < 4, 'color2': Number(item.level_id) >= 4 && Number(item.level_id) < 10, 'color3': Number(item.level_id) >= 10 && Number(item.level_id) < 16, 'color4': Number(item.level_id) > 16 }">{{
+                      item.level_id }}</span>
+                </div>
               </div>
+              <div v-if="FollowBarList.length < 1">没有关注的吧</div>
             </div>
           </div>
         </div>
@@ -286,17 +298,20 @@ hr {
   border-radius: 5px;
 }
 
-.user-cards {
-  flex: auto;
-  width: 300px;
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
+.user-main {
+  width: 80%;
+  min-width: 0;
 }
 
-.post-list {
-  min-width: 500px;
-  width: calc(100% - 300px);
+/* Tab 切换行：与“我的”页「回复我的 | 提到我的」同款 filter-button */
+.user-tabs {
+  display: flex;
+  gap: 4px;
+  margin: 10px 0 6px;
+}
+
+.bar-section {
+  padding: 4px 0;
 }
 
 .my-btn {
@@ -345,12 +360,27 @@ hr {
   opacity: 0.5;
 }
 
+/* 横幅：背景图绝对定位铺底，内容走常规流，横幅随内容撑高（至少 200px），
+   窄内容区标题/标签换行变高时不会与下方内容重叠 */
 .banner-content {
-  position: absolute;
-  top: 60px;
-  padding: 15px 45px;
+  position: relative;
+  box-sizing: border-box;
+  padding: 75px 45px 15px;
   display: flex;
   gap: 30px;
+}
+
+.banner-content > div {
+  min-width: 0;
+}
+
+.image-container {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 300px;
+  pointer-events: none;
 }
 
 .bar-banner .background-image {
@@ -373,7 +403,7 @@ hr {
 
 .bar-banner {
   width: 100%;
-  height: 200px;
+  min-height: 200px;
   position: relative;
 }
 
@@ -382,7 +412,7 @@ hr {
   background-color: transparent;
   box-shadow: none;
   display: flex;
+  flex-wrap: wrap;
   gap: 10px;
-  flex-direction: column;
 }
 </style>

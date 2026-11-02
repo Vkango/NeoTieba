@@ -9,13 +9,13 @@
   <style>
     /* 原生样式标题栏：最小化/最大化/关闭按钮由 tauri-plugin-decorum 注入，
        头像与标签按钮由 TitleBar.vue 挂载。
-       宽度 330px 与 .tabs 的 calc(100% - 400px) 对齐（70px 侧边栏 + 400px 保留区），
+       宽度取 global.css 的 --titlebar-reserve，与最后一个分屏标签条的右侧留白对齐，
        与标签条零重叠：标签条可正常点击，右侧固定留出拖动空隙。 */
     #decorum-titlebar {
       position: fixed;
       top: 0;
       right: 0;
-      width: 330px;
+      width: var(--titlebar-reserve, 330px);
       height: 45px;
       z-index: 1100;
       display: flex;

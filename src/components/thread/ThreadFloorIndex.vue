@@ -166,6 +166,13 @@ defineExpose({ reveal });
   backdrop-filter: blur(20px);
 }
 
+/* 紧凑分屏格：悬浮索引会盖住整列内容，直接不显示（楼层跳转仍可用键盘/滚动） */
+@container pane (max-width: 480px) {
+  .floor-index {
+    display: none;
+  }
+}
+
 .floor-entries {
   --row-height: clamp(20px, calc((100vh - 180px) / 10), 40px);
   display: flex;
