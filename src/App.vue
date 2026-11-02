@@ -151,12 +151,124 @@ const {
 
 const containerRef = ref<HTMLElement | null>(null);
 
-/** gi 之后是否还有可见分屏（决定分隔条是否"功能可用"） */
-function existsVisibleAfter(gi: number): boolean {
-  return tabStore.groups.some((g, i) => i > gi && !g.hidden);
+/**
+ * 分屏动画的渲染插槽层：grid-template-columns 只在列数不变且各列类型兼容时
+ * 才能插值，所以增删分组（列数变化）不能直接动画——
+ * - 进场分组首帧以 0 宽列占位（列数变化为一次不可插值的跳变，但视觉与旧布局一致），
+ *   下一帧再给真实宽度，浏览器即可在两个兼容模板间插值出展开动画；
+ * - 退场分组从 store 删除后仍按原位置保留一个 0 宽"幽灵列"，邻居列在原位
+ *   展宽收窄，动画结束再从渲染列表剔除（此时各列已为 0 宽，剔除不可见）。
+ */
+interface ExitingSlot { id: string; index: number }
+const exitingSlots = ref<ExitingSlot[]>([]);
+const enteringSlotIds = ref<string[]>([]);
+
+watch(
+  () => tabStore.groups.map(g => g.id),
+  (ids, oldIds) => {
+    const prev = oldIds ?? [];
+    if (!prev.length) return; // 应用启动首建分组不做动画
+    const added = ids.filter(id => !prev.includes(id));
+    const removed = prev.filter(id => !ids.includes(id));
+    if (added.length) {
+      enteringSlotIds.value = [...enteringSlotIds.value, ...added];
+      // 双 rAF 保证首帧 0 宽模板先绘制一帧再展开；页面后台时 rAF 会被节流，
+      // 追加一个 setTimeout 兜底（操作幂等，重复清理无害），状态最终一致
+      const clearEntering = () => {
+        enteringSlotIds.value = enteringSlotIds.value.filter(id => !added.includes(id));
+      };
+      requestAnimationFrame(() => requestAnimationFrame(clearEntering));
+      setTimeout(clearEntering, 150);
+    }
+    if (removed.length) {
+      exitingSlots.value = [
+        ...exitingSlots.value,
+        ...removed.map(id => ({ id, index: prev.indexOf(id) }))
+      ];
+      narrowGroupIds.value = new Set([...narrowGroupIds.value].filter(id => !removed.includes(id)));
+      setTimeout(() => {
+        exitingSlots.value = exitingSlots.value.filter(ex => !removed.includes(ex.id));
+      }, 360);
+    }
+  }
+);
+
+/* --------------------- 窄分屏：标签收成书签 --------------------- */
+
+/** 进入窄模式的分屏（标签条退化为当前页只读展示，其余标签收成左缘书签） */
+const narrowGroupIds = ref<Set<string>>(new Set());
+
+function onPaneNarrowChange(groupId: string, narrow: boolean): void {
+  const next = new Set(narrowGroupIds.value);
+  if (narrow) next.add(groupId);
+  else next.delete(groupId);
+  narrowGroupIds.value = next;
 }
 
-/** gi 之后最近的可见分屏下标，无则 -1 */
+/** 窄分屏的左右方向书签：当前页在组内的上一/下一个标签（无则该侧不显示） */
+function paneNavChips(groupId: string): Array<{ side: 'left' | 'right'; tab: TabItem }> {
+  if (!narrowGroupIds.value.has(groupId)) return [];
+  const group = tabStore.groupById(groupId);
+  if (!group || group.hidden) return [];
+  const tabs = tabStore.groupTabs(groupId).filter(tab => tab.show !== false);
+  const idx = tabs.findIndex(tab => tab.key === group.activeKey);
+  if (idx < 0) return [];
+  const result: Array<{ side: 'left' | 'right'; tab: TabItem }> = [];
+  if (idx > 0) result.push({ side: 'left', tab: tabs[idx - 1] });
+  if (idx < tabs.length - 1) result.push({ side: 'right', tab: tabs[idx + 1] });
+  return result;
+}
+
+/** 方向书签定位：贴该分屏对应侧的顶角（与隐藏分屏书签同一套样式） */
+function paneNavChipStyle(groupId: string, side: 'left' | 'right'): Record<string, string> {
+  const si = Math.max(slotIndexOf(groupId), 0);
+  return {
+    gridColumn: String(si * 2 + 1),
+    gridRow: '1',
+    justifySelf: side === 'left' ? 'start' : 'end',
+    marginTop: '10px',
+    borderRadius: side === 'left' ? '0 20px 20px 0' : '20px 0 0 20px'
+  };
+}
+
+interface RenderSlot { id: string; ghost: boolean; collapsed: boolean }
+
+const renderSlots = computed<RenderSlot[]>(() => {
+  const slots: RenderSlot[] = tabStore.groups.map(g => ({
+    id: g.id,
+    ghost: false,
+    collapsed: !!g.hidden || enteringSlotIds.value.includes(g.id)
+  }));
+  for (const ex of exitingSlots.value) {
+    slots.splice(Math.min(ex.index, slots.length), 0, { id: ex.id, ghost: true, collapsed: true });
+  }
+  return slots;
+});
+
+/** 分组在渲染列表（含幽灵列）中的下标：所有 grid 列号都以它为准，
+ *  幽灵列插在中间时不能直接用 store 下标 */
+function slotIndexOf(groupId: string): number {
+  return renderSlots.value.findIndex(s => s.id === groupId);
+}
+
+function storeIndexOf(groupId: string): number {
+  return tabStore.groups.findIndex(g => g.id === groupId);
+}
+
+/** si 之后是否还有可见分屏（决定分隔条是否"功能可用"） */
+function slotVisibleAfter(si: number): boolean {
+  return renderSlots.value.some((s, j) => j > si && !s.collapsed);
+}
+
+/** si 之后最近的可见分屏插槽，无则 null */
+function nearestVisibleSlotAfter(si: number): RenderSlot | null {
+  for (let j = si + 1; j < renderSlots.value.length; j++) {
+    if (!renderSlots.value[j].collapsed) return renderSlots.value[j];
+  }
+  return null;
+}
+
+/** gi 之后最近的可见分屏下标（store 下标，拖宽调权用），无则 -1 */
 function nearestVisibleAfter(gi: number): number {
   for (let i = gi + 1; i < tabStore.groups.length; i++) {
     if (!tabStore.groups[i].hidden) return i;
@@ -168,25 +280,30 @@ function nearestVisibleAfter(gi: number): number {
  * Grid 列模板：分屏列与分隔列交错。列宽用 fr 表达（调宽时保持总权重不变，
  * fr 归一化后与 px 目标值一致），这样内容区与顶部标签条共用同一模板、
  * 比例始终对齐（标签条区域更窄，按相同占比分配）。
- * 隐藏分屏宽度置 0；两个可见分屏之间夹着隐藏分屏时分隔条仍然有效（6px）。
+ * 隐藏/进场/退场的分屏列都是 minmax(0px, 0fr)（而非 0px）：
+ * 与可见列 minmax(160px, Nfr) 类型兼容，列宽变化才能插值出动画；
+ * 两个可见分屏之间夹着不可见分屏时分隔条仍然有效（6px）。
  */
 const gridColumnsStyle = computed(() => {
-  const n = tabStore.groups.length;
-  if (n <= 1) return {};
+  const slots = renderSlots.value;
+  if (slots.length <= 1) return {};
   const widths = tabStore.groupWidths;
-  const useWeights = widths.length === n;
+  const useWeights = widths.length === tabStore.groups.length;
   const cols: string[] = [];
-  for (let i = 0; i < n; i++) {
-    cols.push(tabStore.groups[i].hidden
-      ? '0px'
-      : (useWeights
-        ? `minmax(${SPLIT_MIN_PANE_WIDTH}px, ${Math.max(widths[i], SPLIT_MIN_PANE_WIDTH)}fr)`
-        : `minmax(${SPLIT_MIN_PANE_WIDTH}px, 1fr)`));
-    if (i < n - 1) {
-      const functional = !tabStore.groups[i].hidden && existsVisibleAfter(i);
+  slots.forEach((slot, i) => {
+    if (slot.collapsed) {
+      cols.push('minmax(0px, 0fr)');
+    } else {
+      const li = storeIndexOf(slot.id);
+      cols.push(useWeights && li >= 0
+        ? `minmax(${SPLIT_MIN_PANE_WIDTH}px, ${Math.max(widths[li], SPLIT_MIN_PANE_WIDTH)}fr)`
+        : `minmax(${SPLIT_MIN_PANE_WIDTH}px, 1fr)`);
+    }
+    if (i < slots.length - 1) {
+      const functional = !slot.collapsed && slotVisibleAfter(i);
       cols.push(functional ? `${SPLIT_DIVIDER_WIDTH}px` : '0px');
     }
-  }
+  });
   return { gridTemplateColumns: cols.join(' ') };
 });
 
@@ -197,12 +314,12 @@ function tabPaneStyle(tab: TabItem): Record<string, string> {
     return { gridColumn: '1 / -1', zIndex: '1' };
   }
   const group = tabStore.groupOfTab(tab);
-  const gi = group ? tabStore.groups.findIndex(g => g.id === group.id) : 0;
-  return { gridColumn: String(gi * 2 + 1) };
+  const si = group ? slotIndexOf(group.id) : 0;
+  return { gridColumn: String(Math.max(si, 0) * 2 + 1) };
 }
 
-function dividerTrackStyle(gi: number): Record<string, string> {
-  return { gridColumn: String(gi * 2 + 2) };
+function dividerTrackStyle(si: number): Record<string, string> {
+  return { gridColumn: String(si * 2 + 2) };
 }
 
 /** 点击某个分屏（内容区）时聚焦它，键盘与左侧导航高亮跟随 */
@@ -217,7 +334,10 @@ const anyHiddenGroups = computed(() => tabStore.groups.some(g => g.hidden));
 /** 分组当前页的图标（恢复书签展示用） */
 function groupIconUrl(group: { activeKey: string | null }): string {
   const tab = group.activeKey ? tabStore.tabs.find(t => t.key === group.activeKey) : undefined;
-  const icon = tab?.icon || '';
+  return resolveIconUrl(tab?.icon || '');
+}
+
+function resolveIconUrl(icon: string): string {
   if (!icon) return '';
   if (icon.startsWith('http') || icon.startsWith('data:') || icon.startsWith('/')) return icon;
   try {
@@ -228,9 +348,9 @@ function groupIconUrl(group: { activeKey: string | null }): string {
 }
 
 /** 是否为最后一个可见分屏的标签条槽位（需要在标题栏公摊前截断） */
-function isLastVisibleSlot(gi: number): boolean {
-  if (tabStore.groups[gi].hidden) return false;
-  return !tabStore.groups.some((g, i) => i > gi && !g.hidden);
+function isLastVisibleSlot(si: number): boolean {
+  if (renderSlots.value[si]?.collapsed) return false;
+  return !renderSlots.value.some((s, j) => j > si && !s.collapsed);
 }
 
 /** 隐藏分屏恢复书签的锚点布局：最近的可见邻屏、靠近隐藏侧的顶角 */
@@ -265,34 +385,36 @@ function hiddenChipStyle(group: { id: string; hidden?: boolean }): Record<string
   if (layout.isolated) {
     return { position: 'fixed', top: '55px', left: '80px', zIndex: '30' };
   }
+  // 锚点列号按渲染插槽下标换算（幽灵列存在时与 store 下标不同）
+  const anchorId = tabStore.groups[layout.anchorGi]?.id;
+  const anchorSi = anchorId ? slotIndexOf(anchorId) : 0;
+  // 锚点分屏处于窄屏模式时顶角被方向书签占用，隐藏书签顺延下移一格
+  const stackOffset = anchorId && narrowGroupIds.value.has(anchorId) ? 1 : 0;
   // 书签样式：平贴的一侧直角，外侧圆角（贴左缘 0 20px 20px 0，贴右缘反向）
   return {
-    gridColumn: String(layout.anchorGi * 2 + 1),
+    gridColumn: String(Math.max(anchorSi, 0) * 2 + 1),
     gridRow: '1',
     justifySelf: layout.useLeft ? 'end' : 'start',
-    marginTop: `${10 + layout.stackIndex * 38}px`,
+    marginTop: `${10 + (layout.stackIndex + stackOffset) * 38}px`,
     borderRadius: layout.useLeft ? '20px 0 0 20px' : '0 20px 20px 0'
   };
 }
 
-/** 书签悬停展宽后显示的标题：该分屏的激活页 */
-function groupActiveTitle(group: { activeKey: string | null }): string {
-  const tab = group.activeKey ? tabStore.tabs.find(t => t.key === group.activeKey) : undefined;
-  return tab?.title || '空分屏';
+/** 书签悬停展宽后显示的标题：隐藏书签统一标注"分屏"，
+ *  与窄分屏的标签书签（悬停显示标签标题）区分 */
+function groupActiveTitle(): string {
+  return '分屏';
 }
 
 /** 缝隙工具条：交换左右两个可见分屏的布局位置（有分屏隐藏时禁用，store 内兜底） */
-function swapSides(gi: number, ri: number): void {
-  if (anyHiddenGroups.value || ri < 0) return;
-  const left = tabStore.groups[gi];
-  const right = tabStore.groups[ri];
-  if (left && right) tabStore.swapAdjacentGroups(left.id, right.id);
+function swapSides(leftId: string, rightId: string | null): void {
+  if (anyHiddenGroups.value || !rightId) return;
+  tabStore.swapAdjacentGroups(leftId, rightId);
 }
 
 /** 缝隙工具条：隐藏某侧分屏（主分屏与最后一个可见分屏不可隐藏，store 内兜底） */
-function hideSide(gi: number): void {
-  const group = tabStore.groups[gi];
-  if (group) tabStore.setHidden(group.id, true);
+function hideSide(groupId: string | null): void {
+  if (groupId) tabStore.setHidden(groupId, true);
 }
 
 /* 分屏分隔条拖拽调宽（沿用集锦抽屉的 mousedown + window mousemove 模式） */
@@ -305,6 +427,8 @@ interface PaneResizeSession {
   avail: number;
 }
 let paneResizeSession: PaneResizeSession | null = null;
+/** 拖宽进行中：禁用列宽过渡，实时跟随鼠标（同集锦抽屉 drawer-resizing） */
+const paneResizing = ref(false);
 
 function startPaneResize(event: MouseEvent, li: number): void {
   if (event.button !== 0) return;
@@ -318,6 +442,7 @@ function startPaneResize(event: MouseEvent, li: number): void {
     ? [...tabStore.groupWidths]
     : Array.from({ length: n }, () => avail / n);
   paneResizeSession = { startX: event.clientX, li, ri, widths, avail };
+  paneResizing.value = true;
   window.addEventListener('mousemove', onPaneResize);
   window.addEventListener('mouseup', endPaneResize);
   document.body.style.cursor = 'col-resize';
@@ -349,6 +474,7 @@ function onPaneResize(event: MouseEvent): void {
 
 function endPaneResize(): void {
   paneResizeSession = null;
+  paneResizing.value = false;
   document.body.style.cursor = '';
   window.removeEventListener('mousemove', onPaneResize);
   window.removeEventListener('mouseup', endPaneResize);
@@ -835,7 +961,7 @@ onMounted(async (): Promise<void> => {
 
 <template>
   <div id="container"
-    :class="{ 'drawer-open': collectionStore.drawerOpen, 'drawer-resizing': collectionStore.resizing }"
+    :class="{ 'drawer-open': collectionStore.drawerOpen, 'drawer-resizing': collectionStore.resizing, 'pane-resizing': paneResizing }"
     :style="{ ...containerStyle, ...solidBackgroundStyle, '--collection-drawer-width': collectionStore.drawerWidthCss }">
     <div id="container-overlay" :style="overlayStyle"></div>
     <div class="navi">
@@ -846,16 +972,17 @@ onMounted(async (): Promise<void> => {
       <CollectionRail class="navi-collection" />
     </div>
     <!-- 顶部标签栏：每个分屏一个标签条，列模板与内容区分屏一致（按占比分配）；
-         空白处 data-tauri-drag-region 可拖动窗口 -->
+         空白处 data-tauri-drag-region 可拖动窗口。列号按渲染插槽（含进出场幽灵列）计算 -->
     <div class="tabs-bar" data-tauri-drag-region :style="gridColumnsStyle">
-      <template v-for="(group, gi) in tabStore.groups" :key="group.id">
-        <!-- 显式列号：隐藏分屏的槽位不渲染时，后续标签条绝不能自动左移落进 0px 列 -->
-        <div v-if="!group.hidden" class="tabs-bar-slot" :data-group-id="group.id"
-          :style="{ gridColumn: String(gi * 2 + 1) }" :class="{ 'last-visible': isLastVisibleSlot(gi) }">
-          <TabStrip :group-id="group.id" />
+      <template v-for="(slot, si) in renderSlots" :key="slot.id">
+        <!-- 显式列号：隐藏/幽灵分屏的槽位不渲染时，后续标签条绝不能自动左移落进 0 宽列 -->
+        <div v-if="!slot.collapsed" class="tabs-bar-slot" :data-group-id="slot.id"
+          :style="{ gridColumn: String(si * 2 + 1) }" :class="{ 'last-visible': isLastVisibleSlot(si) }">
+          <TabStrip v-if="!slot.ghost" :group-id="slot.id" @narrow-change="onPaneNarrowChange" />
         </div>
-        <div v-if="gi < tabStore.groups.length - 1" class="tabs-bar-gap" :style="{ gridColumn: String(gi * 2 + 2) }"
-          @mousedown.prevent="startPaneResize($event, gi)"></div>
+        <div v-if="si < renderSlots.length - 1 && !slot.collapsed && slotVisibleAfter(si)" class="tabs-bar-gap"
+          :style="{ gridColumn: String(si * 2 + 2) }"
+          @mousedown.prevent="startPaneResize($event, storeIndexOf(slot.id))"></div>
       </template>
     </div>
     <!-- 内容分屏：所有标签常驻挂载（keep-alive），同列同格堆叠、v-show 控制可见，
@@ -863,27 +990,27 @@ onMounted(async (): Promise<void> => {
     <div ref="containerRef" class="container" :style="gridColumnsStyle">
       <!-- 分隔条：拖拽调宽；悬停显示分屏互动工具条（交换 / 隐藏左 / 隐藏右）。
            中间夹着隐藏分屏的两个可见分屏之间，分隔条照常工作（不特殊化） -->
-      <template v-for="(group, gi) in tabStore.groups" :key="group.id">
-        <div v-if="gi < tabStore.groups.length - 1 && !group.hidden && existsVisibleAfter(gi)" class="pane-divider"
-          :style="dividerTrackStyle(gi)" @mousedown.prevent="startPaneResize($event, gi)">
+      <template v-for="(slot, si) in renderSlots" :key="`div-${slot.id}`">
+        <div v-if="si < renderSlots.length - 1 && !slot.collapsed && slotVisibleAfter(si)" class="pane-divider"
+          :style="dividerTrackStyle(si)" @mousedown.prevent="startPaneResize($event, storeIndexOf(slot.id))">
           <div class="divider-toolbar" @mousedown.stop @click.stop>
             <span class="divider-btn material-symbols-outlined" title="交换两屏页面" :class="{ disabled: anyHiddenGroups }"
-              @click="swapSides(gi, nearestVisibleAfter(gi))">swap_horiz</span>
+              @click="swapSides(slot.id, nearestVisibleSlotAfter(si)?.id ?? null)">swap_horiz</span>
             <span class="divider-btn material-symbols-outlined" title="隐藏左边分屏"
-              @click="hideSide(gi)">keyboard_double_arrow_left</span>
+              @click="hideSide(slot.id)">keyboard_double_arrow_left</span>
             <span class="divider-btn material-symbols-outlined" title="隐藏右边分屏"
-              @click="hideSide(nearestVisibleAfter(gi))">keyboard_double_arrow_right</span>
+              @click="hideSide(nearestVisibleSlotAfter(si)?.id ?? null)">keyboard_double_arrow_right</span>
           </div>
         </div>
       </template>
       <!-- 拖拽标签期间：所有可用落区提前高亮，提示胶囊锚定在各落区旁，悬停的目标加强 -->
-      <template v-for="(group, gi) in tabStore.groups" :key="`hl-${group.id}`">
-        <div v-if="splitOverlay.zonesActive && group.id !== splitOverlay.sourceGroupId && !group.hidden"
-          class="pane-drop-highlight" :data-group-id="group.id"
-          :class="{ hovered: tabStore.splitDropZone?.type === 'move' && tabStore.splitDropZone.groupId === group.id }"
-          :style="{ gridColumn: String(gi * 2 + 1) }">
+      <template v-for="slot in renderSlots" :key="`hl-${slot.id}`">
+        <div v-if="splitOverlay.zonesActive && !slot.ghost && !slot.collapsed && slot.id !== splitOverlay.sourceGroupId"
+          class="pane-drop-highlight" :data-group-id="slot.id"
+          :class="{ hovered: tabStore.splitDropZone?.type === 'move' && tabStore.splitDropZone.groupId === slot.id }"
+          :style="{ gridColumn: String(Math.max(slotIndexOf(slot.id), 0) * 2 + 1) }">
           <div class="pane-drop-label dynamic-island-pill"
-            :class="{ hovered: tabStore.splitDropZone?.type === 'move' && tabStore.splitDropZone.groupId === group.id }">
+            :class="{ hovered: tabStore.splitDropZone?.type === 'move' && tabStore.splitDropZone.groupId === slot.id }">
             <span class="material-symbols-outlined">drag_pan</span>
             <span>移动到此分屏</span>
           </div>
@@ -898,7 +1025,7 @@ onMounted(async (): Promise<void> => {
         </div>
       </div>
       <!-- 隐藏分屏的恢复入口：书签式图标贴在相邻可见分屏朝向隐藏侧的顶角，
-           悬停沿锚定边反向展宽露出激活页标题，点击重新显示 -->
+           悬停沿锚定边反向展宽露出"分屏"标注，点击重新显示 -->
       <template v-for="group in tabStore.groups" :key="`chip-${group.id}`">
         <div v-if="group.hidden" class="hidden-chip"
           :class="{ 'flip': hiddenChipFlips(group), 'edge-right': hiddenChipFlips(group), 'edge-left': !hiddenChipFlips(group) }"
@@ -906,7 +1033,21 @@ onMounted(async (): Promise<void> => {
           <img v-if="groupIconUrl(group)" class="hidden-chip-icon" :src="groupIconUrl(group)"
             referrerpolicy="no-referrer" />
           <span v-else class="material-symbols-outlined hidden-chip-icon">visibility</span>
-          <span class="hidden-chip-title">{{ groupActiveTitle(group) }}</span>
+          <span class="hidden-chip-title">{{ groupActiveTitle() }}</span>
+        </div>
+      </template>
+      <!-- 窄分屏的左右方向书签：平时只显示箭头，悬停展宽露出相邻标签的图标和标题，
+           点击切换为该分屏当前页；与隐藏分屏的恢复书签共用顶角并纵向堆叠 -->
+      <template v-for="group in tabStore.groups" :key="`pnav-${group.id}`">
+        <div v-for="nav in paneNavChips(group.id)" :key="`pane-nav-${nav.side}`" class="hidden-chip pane-nav-chip"
+          :class="{ 'flip': nav.side === 'right', 'edge-left': nav.side === 'left', 'edge-right': nav.side === 'right' }"
+          :style="paneNavChipStyle(group.id, nav.side)" @click="tabStore.switchTab(nav.tab.key)">
+          <span class="material-symbols-outlined hidden-chip-icon pane-nav-arrow">{{ nav.side === 'left'
+            ? 'keyboard_double_arrow_left' : 'keyboard_double_arrow_right' }}</span>
+          <img v-if="nav.tab.icon" class="hidden-chip-icon" :src="resolveIconUrl(nav.tab.icon)"
+            referrerpolicy="no-referrer" />
+          <span v-else class="material-symbols-outlined hidden-chip-icon">tab</span>
+          <span class="hidden-chip-title">{{ nav.tab.title }}</span>
         </div>
       </template>
       <div v-for="tab in tabStore.tabs" v-show="tabStore.isTabVisibleInPane(tab)" :key="tab.key" class="tab-pane"
@@ -1022,7 +1163,10 @@ onMounted(async (): Promise<void> => {
   left: 70px;
   height: calc(100% - 45px);
   border-radius: 5px 0 0 0;
-  transition: left 0.3s ease, width 0.3s ease;
+  /* 列模板动画与集锦抽屉同款 0.3s ease：开/关/隐藏分屏时列宽平滑插值
+     （grid-template-columns 仅在列数不变且列类型兼容时插值，
+     增删分组的动画由渲染插槽层的幽灵列/首帧零宽机制保证兼容） */
+  transition: left 0.3s ease, width 0.3s ease, grid-template-columns 0.3s ease;
 }
 
 /* 集锦分屏：内容区向右避让，给左侧面板留出区域 */
@@ -1033,6 +1177,12 @@ onMounted(async (): Promise<void> => {
 
 /* 拖拽尺寸调节器时禁用过渡，实时跟随 */
 #container.drawer-resizing .container {
+  transition: none;
+}
+
+/* 拖拽分屏分隔条时禁用列宽过渡，实时跟随（与集锦抽屉的 drawer-resizing 同理） */
+#container.pane-resizing .container,
+#container.pane-resizing .tabs-bar {
   transition: none;
 }
 
@@ -1106,7 +1256,7 @@ onMounted(async (): Promise<void> => {
   padding-top: 5px;
   box-sizing: border-box;
   z-index: 1090;
-  transition: left 0.3s ease, width 0.3s ease;
+  transition: left 0.3s ease, width 0.3s ease, grid-template-columns 0.3s ease;
 }
 
 /* 集锦抽屉打开：与内容区同步右移避让 */
@@ -1279,6 +1429,41 @@ onMounted(async (): Promise<void> => {
 
 .hidden-chip.flip .hidden-chip-title {
   margin: 0 8px 0 12px;
+}
+
+/* 窄分屏方向书签：折叠态只显示方向箭头，悬停展宽露出目标标签的图标和标题 */
+.hidden-chip.pane-nav-chip .hidden-chip-icon:not(.pane-nav-arrow),
+.hidden-chip.pane-nav-chip .hidden-chip-title {
+  max-width: 0;
+  width: 0;
+  opacity: 0;
+  overflow: hidden;
+  margin: 0;
+  transition: max-width 0.18s ease, opacity 0.15s ease;
+}
+
+.hidden-chip.pane-nav-chip:hover .hidden-chip-icon:not(.pane-nav-arrow) {
+  max-width: 20px;
+  width: 20px;
+  opacity: 1;
+}
+
+.hidden-chip.pane-nav-chip:hover .hidden-chip-title {
+  max-width: 200px;
+  width: auto;
+  opacity: 1;
+}
+
+.hidden-chip.pane-nav-chip:not(.flip):hover .hidden-chip-title {
+  margin: 0 12px 0 6px;
+}
+
+.hidden-chip.pane-nav-chip.flip:hover .hidden-chip-title {
+  margin: 0 6px 0 12px;
+}
+
+.pane-nav-arrow {
+  opacity: 0.75;
 }
 
 /* 拖拽期间的基础落区高亮（所有可用目标），hovered = 光标悬停的当前目标 */

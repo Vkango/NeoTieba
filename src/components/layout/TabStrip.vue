@@ -1,6 +1,14 @@
 <template>
-  <div class="tab-strip" data-tauri-drag-region @contextmenu.prevent="openPaneContextMenu($event)">
-    <transition-group ref="stripRef" name="tab-list"
+  <div ref="rootRef" class="tab-strip" data-tauri-drag-region @contextmenu.prevent="openPaneContextMenu($event)">
+    <!-- 窄分屏：标签条退化为只读的当前页展示（其余标签以左右方向书签形式贴在分屏边缘，见 App.vue） -->
+    <div v-if="narrow" class="tab-strip-compact" data-tauri-drag-region>
+      <template v-if="activeStripTab">
+        <img class="icon" :class="{ 'invert': activeStripTab.icon_invert }" :src="getIconPath(activeStripTab.icon)"
+          referrerpolicy="no-referrer" />
+        <div class="pane-current-title">{{ activeStripTab.title }}</div>
+      </template>
+    </div>
+    <transition-group v-else ref="stripRef" name="tab-list"
       :move-class="isDragging || isSettling ? 'tab-drag-move' : 'tab-list-move'" tag="div" class="tab-strip-tabs"
       data-tauri-drag-region @wheel="onTabScroll" @scroll="updateDragPreview"
       @before-leave="(el: Element) => pinLeavingTab(el as HTMLElement)">
@@ -41,6 +49,7 @@ import { errorService } from '@/core/error-service';
 import { beginSplitDrag, endSplitDrag } from '@/composables/useSplitDragOverlay';
 
 const props = defineProps<{ groupId: string }>();
+const emit = defineEmits<{ (e: 'narrowChange', groupId: string, narrow: boolean): void }>();
 
 const tabStore = useTabStore();
 const collectionStore = useCollectionStore();
@@ -58,6 +67,20 @@ const TAB_MAX_WIDTH = 180;
 const TAB_MIN_WIDTH = 56;
 /** 公摊：右侧预留空白，最后一个标签不贴分屏边界 */
 const TAB_WIDTH_RESERVE = 24;
+/** 窄分屏阈值：标签条宽度不足页面宽度的该比例时收起标签
+ *  （当前页只读展示 + 左右方向书签），宽度恢复后标签条自动回来 */
+const NARROW_PANE_RATIO = 0.25;
+
+const narrow = computed(() => {
+  if (!stripWidth.value) return false;
+  const pageWidth = document.documentElement.clientWidth || window.innerWidth;
+  return stripWidth.value / Math.max(pageWidth, 1) < NARROW_PANE_RATIO;
+});
+watch(narrow, (isNarrow) => emit('narrowChange', props.groupId, isNarrow), { immediate: true });
+
+/** 窄分屏顶部展示的当前页 */
+const activeStripTab = computed(() =>
+  stripTabs.value.find(tab => tabStore.isTabVisibleInPane(tab)) ?? stripTabs.value[0] ?? null);
 
 const tabWidth = computed(() => {
   if (!stripWidth.value) return TAB_MAX_WIDTH;
@@ -65,6 +88,9 @@ const tabWidth = computed(() => {
   return Math.max(TAB_MIN_WIDTH, Math.min(TAB_MAX_WIDTH, Math.floor((stripWidth.value - TAB_WIDTH_RESERVE) / n)));
 });
 
+/** 根元素：宽度测量必须挂在它身上而非 transition-group——
+ *  窄分屏模式下标签列表会被卸载，挂在上面就再也量不到恢复 */
+const rootRef = ref<HTMLElement | null>(null);
 const stripRef = ref<{ $el: HTMLElement } | null>(null);
 const isDragging = ref(false);
 const isSettling = ref(false);
@@ -90,7 +116,7 @@ const onTabScroll = (event: WheelEvent): void => {
 };
 
 onMounted(() => {
-  const el = stripRef.value?.$el;
+  const el = rootRef.value;
   if (!el) return;
   stripWidth.value = el.clientWidth;
   stripResizeObserver = new ResizeObserver((entries) => {
@@ -676,6 +702,36 @@ function getIconPath(icon: string): string {
   flex-wrap: nowrap;
   overflow-x: hidden;
   overflow-y: hidden;
+}
+
+/* 窄分屏的紧凑标签条：只读展示当前页图标+标题，不响应点击/拖拽，
+   空白处保留拖动窗口与分屏右键菜单 */
+.tab-strip-compact {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 10px;
+  height: 35px;
+  overflow: hidden;
+  cursor: default;
+}
+
+.tab-strip-compact .icon {
+  flex: 0 0 auto;
+}
+
+/* 独立类名：组件内还有一个给标签按钮用的全局 .title 规则
+   （position:absolute; left:35px），会把这个标题定位飞到标签条左缘 */
+.tab-strip-compact .pane-current-title {
+  font-size: 13px;
+  min-width: 0;
+  flex: 0 1 auto;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  opacity: 0.8;
 }
 
 .tab-strip-tabs:hover {
