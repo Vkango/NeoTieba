@@ -40,7 +40,8 @@
 
       </div>
       <SubPostView v-if="reply_num > 0" :tid="tid" :pid="pid" :reply_num="reply_num" :local="local"
-        :embedded-images="props.embeddedImages" :expanded="expanded" @openUser="openUser"
+        :embedded-images="props.embeddedImages" :expanded="expanded" :floor-avatar="avatar" :floor-uid="uid"
+        :floor-name="user_name" @openUser="openUser"
         @select-image="handleSubpostImage" @register-images="urls => emit('registerImages', urls)">
       </SubPostView>
     </div>

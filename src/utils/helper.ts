@@ -33,9 +33,11 @@ export function processContentElements(
     elements: ContentElement[],
     dismissMedia = false,
     blocked: MediaBlocks = { avatars: false, images: false, videos: false, audio: false },
-    resolveUrl: (url: string) => string = (url: string) => url
+    resolveUrl: (url: string) => string = (url: string) => url,
+    replyTargetAvatar = ''
 ): string {
     let content = '';
+    let targetAvatarUsed = false;
     elements.forEach((ele, index) => {
         switch (ele.type) {
             case 0: // text
@@ -75,6 +77,13 @@ export function processContentElements(
                 }
                 break;
             case 4: // at
+                // "回复 XXX" 的目标用户前缀一个小头像，方便对上是回复谁（只装饰第一处）
+                const prevEle = elements[index - 1];
+                if (replyTargetAvatar && !blocked.avatars && !targetAvatarUsed
+                    && prevEle?.type === 0 && String(prevEle.text ?? '').trim().endsWith('回复')) {
+                    content += `<img class="at-avatar" src="${resolveUrl(replyTargetAvatar)}" referrerpolicy="no-referrer" alt="">`;
+                    targetAvatarUsed = true;
+                }
                 content += `<button class="at-button" uid="${ele.uid}">${ele.text}</button>`;
                 break;
             case 5:

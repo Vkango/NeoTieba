@@ -162,6 +162,7 @@ const displaySettings: ComputedRef<SettingItem[]> = computed(() => [
   { id: 'no_image', icon: 'image_not_supported', title: '无图模式', type: 'toggle', desc: '按下方勾选项禁用媒体，保留表情与壁纸', value: settingsStore.noImage },
   { id: 'show_collection_rail', icon: 'collections_bookmark', title: '在导航中展示集锦预览', type: 'toggle', desc: '关闭后隐藏左侧头像栏，但仍可将标签拖入左侧区域加入集锦', value: settingsStore.showCollectionRail },
   { id: 'hover_image_preview', icon: 'zoom_in', title: '悬停快速预览图片', type: 'toggle', desc: '鼠标在帖子图片上短暂停留时，于右侧空白处浮动展示大图；空间不足时自动关闭，点击仍进入完整查看器', value: settingsStore.hoverImagePreview },
+  { id: 'highlight_reply_chain', icon: 'forum', title: '悬停高亮楼中楼叙事线', type: 'toggle', desc: '鼠标移入楼中楼回复时，保留它与它逐级回复的上文，其余回复压暗；上文已滚出视野时，在旁边浮窗直接展示这段对话', value: settingsStore.highlightReplyChain },
   {
     id: 'theme',
     icon: 'palette',
@@ -297,7 +298,7 @@ const updateSetting = (id: string, value: string | boolean | number): void => {
   }
   if (id === 'archive_online_fallback') { settingsStore.archiveOnlineFallback = Boolean(value); return; }
   if (id === 'keyboard_enabled') { settingsStore.updateDisplaySetting(id, value); return; }
-  if (['show_user_id', 'show_collection_rail', 'hover_image_preview', 'only_author', 'no_image', 'theme', 'global_font', 'accent_mode', 'custom_accent_color', 'wallpaper_path', 'wallpaper_accent', 'wallpaper_blur', 'wallpaper_effect', 'wallpaper_solid_color'].includes(id)) {
+  if (['show_user_id', 'show_collection_rail', 'hover_image_preview', 'highlight_reply_chain', 'only_author', 'no_image', 'theme', 'global_font', 'accent_mode', 'custom_accent_color', 'wallpaper_path', 'wallpaper_accent', 'wallpaper_blur', 'wallpaper_effect', 'wallpaper_solid_color'].includes(id)) {
     settingsStore.updateDisplaySetting(id, value);
     return;
   }

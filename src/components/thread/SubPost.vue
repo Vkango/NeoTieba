@@ -25,7 +25,7 @@ import { useOfflineMedia, useArchiveFallback } from '@/composables/useOfflineMed
 import type { ContentElement } from '@/types/common';
 const offlineMedia = useOfflineMedia();
 const archiveFallback = useArchiveFallback();
-const content = computed(() => processContentElements(props.thread_content as ContentElement[], false, blocked.value, offlineMedia));
+const content = computed(() => processContentElements(props.thread_content as ContentElement[], false, blocked.value, offlineMedia, props.targetAvatar));
 const emit = defineEmits(['openUser', 'selectImage'])
 const handleClick = (event: any) => {
   if (event.target.classList.contains('thread-reply-img')) {
@@ -55,7 +55,9 @@ const props = defineProps({
   uid: {
     required: true,
   },
-  embeddedImages: { type: Boolean, default: false }
+  embeddedImages: { type: Boolean, default: false },
+  /** "回复 XXX" 目标用户的头像 URL，有则在昵称前显示小头像 */
+  targetAvatar: { type: String, default: '' }
 })
 </script>
 <style scoped>
@@ -72,6 +74,12 @@ const props = defineProps({
   display: flow-root;
   border-radius: 8px;
   font-size: 13px;
+  transition: opacity 0.2s ease;
+}
+
+/* 悬停其他回复时不在其叙事线上：压暗。透明度只落在单条上，不影响外层 sticky 的 backdrop-filter */
+.subpost-1.chain-dim {
+  opacity: 0.4;
 }
 
 .subpost-1>.avatar {
@@ -92,6 +100,15 @@ const props = defineProps({
   width: auto;
   height: 1lh;
   vertical-align: middle;
+}
+
+/* "回复 XXX" 前的目标用户小头像，方便对上是回复谁 */
+.subpost-preview :deep(.at-avatar) {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  vertical-align: middle;
+  margin-right: 3px;
 }
 
 .user-name {
