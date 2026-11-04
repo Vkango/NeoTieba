@@ -201,6 +201,21 @@ button:active {
     height: 32px;
 }
 
+/* 多图网格（设置：图片以网格形式呈现）：连排图片不再逐张换行，等宽铺排并保留间距 */
+.content-image-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    margin: 4px 0;
+}
+
+.content-image-grid .thread-reply-img {
+    width: 100%;
+    aspect-ratio: 1;
+    object-fit: cover;
+    border-radius: 5px;
+}
+
 .level {
     background-color: rgba(0, 0, 0, 0.1);
     padding: 3px 10px;

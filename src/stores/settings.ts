@@ -134,6 +134,8 @@ export const useSettingsStore = defineStore('settings', () => {
     const hoverImagePreview = ref(true);
     /** 悬停楼中楼回复时高亮其叙事线（回复的上文），其余回复压暗 */
     const highlightReplyChain = ref(true);
+    /** 帖子内容里的多张图片以网格排布（图片间不再逐张换行，网格带间距） */
+    const imageGrid = ref(false);
     const onlyAuthor = ref(false);
     const noImage = ref(false);
     const mediaBlocks = ref(normalizeMediaBlocks());
@@ -174,6 +176,9 @@ export const useSettingsStore = defineStore('settings', () => {
                 break;
             case 'highlight_reply_chain':
                 highlightReplyChain.value = Boolean(value);
+                break;
+            case 'image_grid':
+                imageGrid.value = Boolean(value);
                 break;
             case 'only_author':
                 onlyAuthor.value = value;
@@ -399,6 +404,7 @@ export const useSettingsStore = defineStore('settings', () => {
         showCollectionRail,
         hoverImagePreview,
         highlightReplyChain,
+        imageGrid,
         onlyAuthor,
         noImage, mediaBlocks, mediaPolicy, isMediaBlocked, settingsError, wallpaperBusy,
         theme,
@@ -452,7 +458,7 @@ export const useSettingsStore = defineStore('settings', () => {
         },
 
         pick: [
-            'showUserId', 'showCollectionRail', 'hoverImagePreview', 'highlightReplyChain', 'onlyAuthor', 'noImage', 'mediaBlocks', 'theme', 'globalFont', 'accentMode', 'customAccentColor',
+            'showUserId', 'showCollectionRail', 'hoverImagePreview', 'highlightReplyChain', 'imageGrid', 'onlyAuthor', 'noImage', 'mediaBlocks', 'theme', 'globalFont', 'accentMode', 'customAccentColor',
             'wallpaperPath', 'wallpaperAccent', 'wallpaperBlur', 'wallpaperEffect', 'wallpaperSolidColor',
             'useProxy', 'proxyUrl', 'enableAutoSign', 'blockList',
             'threadSaveDefaults', 'archiveOnlineFallback',

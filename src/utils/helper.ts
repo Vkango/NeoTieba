@@ -1,6 +1,7 @@
 import type { MediaBlocks } from './settings-policy';
 import type { ContentElement } from '@/types';
 import { sanitize } from './sanitizer';
+import { useSettingsStore } from '@/stores/settings';
 
 export function getTimeInterval(previousTimestamp: number): string {
     const currentTimestamp = Date.now();
@@ -38,13 +39,54 @@ export function processContentElements(
 ): string {
     let content = '';
     let targetAvatarUsed = false;
+    // 多图网格：开启后连续图片不再逐张换行，而是包进带间距的网格容器
+    let imageGridLayout = false;
+    try { imageGridLayout = useSettingsStore().imageGrid; } catch { /* pinia 未激活时按默认（关闭）处理 */ }
+
+    // 连续图片缓冲：相邻的 type 3（中间仅隔空白文本）先收集，遇到其他内容时统一输出
+    let imageRun: Array<{ index: number; src: string; fullSrc: string }> = [];
+    // 上一段是否输出为块级网格容器（其后的文本/内联内容天然另起一行，无需再加 <br>）
+    let afterGridBlock = false;
+
+    const buildImageHtml = (src: string, fullSrc: string, grid: boolean): string => {
+        // data-remote-src keeps the ORIGINAL remote URL so that the
+        // archive fallback handler can swap it in when the archived
+        // copy is missing (e.g. avatars excluded from the archive).
+        return `<img class="thread-reply-img"${grid ? '' : ' style="max-height: 450px; max-width: 300px; border-radius: 5px;"'} src="${src ? resolveUrl(src) : src}" data-full-src="${fullSrc}" data-remote-src="${fullSrc}" referrerpolicy="no-referrer">`;
+    };
+
+    const flushImageRun = () => {
+        if (!imageRun.length) return;
+        if (imageGridLayout && imageRun.length >= 2) {
+            // 网格：去掉图片间的 <br>，由块级容器 + CSS gap 负责排布与换行
+            content += `<div class="content-image-grid">${imageRun.map(item => buildImageHtml(item.src, item.fullSrc, true)).join('')}</div>`;
+            afterGridBlock = true;
+        } else {
+            // 单图或未开网格：保持原有逐张换行的输出
+            content += imageRun.map(item => (item.index !== 0 ? '<br>' : '') + buildImageHtml(item.src, item.fullSrc, false)).join('');
+            afterGridBlock = false;
+        }
+        imageRun = [];
+    };
+
     elements.forEach((ele, index) => {
+        const blankText = ele.type === 0 && !String(ele.text ?? '').trim();
+        // 网格收集期间夹在两张图片之间的空白文本（如换行符）直接吞掉，避免打断图片连排
+        if (imageGridLayout && blankText && imageRun.length && elements[index + 1]?.type === 3) {
+            return;
+        }
+        if (ele.type !== 3) flushImageRun();
+        // 网格容器后的空白文本：块级换行已完成，吞掉避免多出空行
+        if (blankText && elements[index - 1]?.type === 3 && afterGridBlock) {
+            return;
+        }
         switch (ele.type) {
             case 0: // text
                 if (index === 0 && ele.text === '\n') {
                     break;
                 }
-                if (index !== 0 && elements[index - 1]?.type === 3) {
+                // 网格容器本身是块级元素，其后的文本天然另起一行，补 <br> 反而多出空行
+                if (index !== 0 && elements[index - 1]?.type === 3 && !afterGridBlock) {
                     content += '<br>';
                 }
                 content += ele.text || '';
@@ -61,19 +103,13 @@ export function processContentElements(
                 content += `<img class="emoticon" src="${'/assets/emoticons/' + ele.text + '.png'}" alt="${ele.c}" />`;
                 break;
             case 3:
-                if (blocked.images) { content += '<span class="media-placeholder">[配图已禁用]</span>'; break; }
+                if (blocked.images) { flushImageRun(); content += '<span class="media-placeholder">[配图已禁用]</span>'; break; }
                 // image
                 if (!dismissMedia) {
-                    // console.log(ele);
                     // Tieba's big CDN source is the high-resolution display URL.
                     const imgSrc = ele.bigCdnSrc || ele.big_cdn_src || ele.bigSrc || ele.big_src
                         || ele.originSrc || ele.origin_src;
-                    const fullSrc = imgSrc;
-                    // data-remote-src keeps the ORIGINAL remote URL so that the
-                    // archive fallback handler can swap it in when the archived
-                    // copy is missing (e.g. avatars excluded from the archive).
-                    content += (index !== 0 ? '<br>' : '') +
-                        `<img class="thread-reply-img" style="max-height: 450px; max-width: 300px; border-radius: 5px;" src="${imgSrc ? resolveUrl(imgSrc) : imgSrc}" data-full-src="${fullSrc}" data-remote-src="${fullSrc}" referrerpolicy="no-referrer">`;
+                    imageRun.push({ index, src: imgSrc || '', fullSrc: imgSrc || '' });
                 }
                 break;
             case 4: // at
@@ -90,7 +126,10 @@ export function processContentElements(
                 if (blocked.videos) { content += '<span class="media-placeholder">[视频已禁用]</span>'; break; }
                 // video
                 if (!dismissMedia) {
-                    const prefix = (index !== 0 && elements[index - 1]?.type !== 0 && elements[index - 1]?.text !== '\n') ? '<br>' : '';
+                    const prevElement = elements[index - 1];
+                    // 前面是网格容器时块级换行已完成，不再补 <br>，避免多出空行
+                    const skipBreak = prevElement?.type === 3 && afterGridBlock;
+                    const prefix = (index !== 0 && prevElement?.type !== 0 && prevElement?.text !== '\n' && !skipBreak) ? '<br>' : '';
                     content += prefix +
                         `<video class="thread-reply-img" style="max-height: 450px; max-width: 300px; border-radius: 5px;" src="${resolveUrl(ele.link || '')}" data-remote-src="${ele.link || ''}" referrerpolicy="no-referrer" controls></video>`;
                 }
@@ -107,6 +146,7 @@ export function processContentElements(
                 break;
         }
     });
+    flushImageRun();
     return sanitize(content);
 }
 
