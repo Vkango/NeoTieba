@@ -7,7 +7,8 @@
     <div class="subpost-preview">
       <span class="user-name" @click="emit('openUser', props.uid)">{{ user_name }}<small
           v-if="settings.showUserId && props.uid && String(props.uid) !== '0'">
-          · UID {{ props.uid }}</small></span>：<span ref="contentElement" class="thread-content" @click="handleClick"
+          · UID {{ props.uid }}</small></span><span class="name-separator" aria-hidden="true"></span><span
+        ref="contentElement" class="thread-content" @click="handleClick"
         @error.capture="archiveFallback" v-html="content">
       </span>
     </div>
@@ -107,6 +108,12 @@ onMounted(() => { nextTick(() => hydrateVoiceAudios(contentElement.value)); });
   width: auto;
   height: 1lh;
   vertical-align: middle;
+}
+
+/* 大图/视频在楼中楼里改为块级独占一行：inline 时图片的基线会把作者名拽到图片底部，
+   块级后作者名与三角保持在顶部一行 */
+.subpost-preview :deep(.thread-reply-img) {
+  display: block;
 }
 
 /* "回复 XXX" 前的目标用户小头像，方便对上是回复谁 */

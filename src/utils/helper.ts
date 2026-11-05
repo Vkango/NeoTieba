@@ -42,6 +42,8 @@ export function processContentElements(
 ): string {
     let content = '';
     let targetAvatarUsed = false;
+    // "回复 @xxx :" 里跟在 @ 后的那条文本的下标：渲染它时吞掉冒号、改输出面包屑三角
+    let colonAsSeparatorAt = -1;
     // 多图网格：开启后连续图片不再逐张换行，而是包进带间距的网格容器
     let imageGridLayout = false;
     try { imageGridLayout = useSettingsStore().imageGrid; } catch { /* pinia 未激活时按默认（关闭）处理 */ }
@@ -92,6 +94,12 @@ export function processContentElements(
                 if (index !== 0 && elements[index - 1]?.type === 3 && !afterGridBlock) {
                     content += '<br>';
                 }
+                if (index === colonAsSeparatorAt) {
+                    colonAsSeparatorAt = -1;
+                    const text = String(ele.text ?? '').replace(/^\s*[:：]\s*/, '');
+                    content += `<span class="name-separator" aria-hidden="true"></span>` + text;
+                    break;
+                }
                 content += ele.text || '';
                 break;
             case 1: // link
@@ -115,16 +123,24 @@ export function processContentElements(
                     imageRun.push({ index, src: imgSrc || '', fullSrc: imgSrc || '' });
                 }
                 break;
-            case 4: // at
+            case 4: { // at
                 // "回复 XXX" 的目标用户前缀一个小头像，方便对上是回复谁（只装饰第一处）
                 const prevEle = elements[index - 1];
-                if (replyTargetAvatar && !blocked.avatars && !targetAvatarUsed
-                    && prevEle?.type === 0 && String(prevEle.text ?? '').trim().endsWith('回复')) {
+                const isReplyPrefix = prevEle?.type === 0 && String(prevEle.text ?? '').trim().endsWith('回复');
+                if (replyTargetAvatar && !blocked.avatars && !targetAvatarUsed && isReplyPrefix) {
                     content += `<img class="at-avatar" src="${toMediaUrl(resolveUrl(replyTargetAvatar))}" referrerpolicy="no-referrer" alt="">`;
                     targetAvatarUsed = true;
                 }
                 content += `<button class="at-button" uid="${ele.uid}">${ele.text}</button>`;
+                // "回复 @xxx :" 的冒号不在 @ 元素里，而在紧随其后的文本元素开头：标记它，渲染时换成面包屑三角
+                if (isReplyPrefix) {
+                    const nextEle = elements[index + 1];
+                    if (nextEle?.type === 0 && /^\s*[:：]/.test(String(nextEle.text ?? ''))) {
+                        colonAsSeparatorAt = index + 1;
+                    }
+                }
                 break;
+            }
             case 5:
                 if (blocked.videos) { content += '<span class="media-placeholder">[视频已禁用]</span>'; break; }
                 // video

@@ -396,6 +396,21 @@ button:active {
     opacity: 0.5;
 }
 
+/* 面包屑式分隔：小三角代替「用户名：内容」的冒号。currentColor 跟随主题，
+   在 v-html 内容里也会出现，故放全局 */
+.name-separator {
+    display: inline-block;
+    width: 0;
+    height: 0;
+    margin: 0 10px;
+    border-top: 4px solid transparent;
+    border-bottom: 4px solid transparent;
+    border-left: 6px solid currentColor;
+    opacity: 0.45;
+    vertical-align: middle;
+    margin-bottom: 5px;
+}
+
 .notification-container {
     position: fixed;
     display: flex;
@@ -597,6 +612,7 @@ html.macos .tabs {
     border: 1px solid rgba(var(--text-color), 0.12);
     box-shadow: none;
 }
+
 /* 媒体占位提示（媒体被禁用 / 语音加载失败）：弱化为灰字，不抢正文 */
 .media-placeholder {
     color: rgba(var(--text-color), 0.45);

@@ -31,7 +31,8 @@
           :class="{ current: row.index === previewIndex }">
           <RemoteImage v-if="row.avatar" kind="avatars" class="chain-preview-avatar" :src="row.avatar" />
           <div class="chain-preview-body">
-            <span class="chain-preview-user">{{ row.name }}</span>：<span class="chain-preview-text" v-html="row.html"></span>
+            <span class="chain-preview-user">{{ row.name }}</span><span class="name-separator"
+              aria-hidden="true"></span><span class="chain-preview-text" v-html="row.html"></span>
           </div>
         </div>
       </div>
