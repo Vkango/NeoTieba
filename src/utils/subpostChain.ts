@@ -101,3 +101,22 @@ export function buildReplyChains(items: ChainItem[]): ReplyChainMeta {
   });
   return { chains, parents };
 }
+
+/**
+ * 点击第 index 条时的高亮集合：其叙事线（自身+同轮+逐级上文）之外，
+ * 再收进所有叙事线经过其中条目的后续回复（子孙链）。
+ * parents 永远在前，chain[j] 的元素都不大于 j，顺序单遍扫描即可收全。
+ */
+export function expandChain(chains: Set<number>[], index: number): Set<number> {
+  const set = new Set(chains[index] ?? []);
+  for (let j = 0; j < chains.length; j++) {
+    if (set.has(j)) continue;
+    for (const i of chains[j]) {
+      if (set.has(i)) {
+        for (const x of chains[j]) set.add(x);
+        break;
+      }
+    }
+  }
+  return set;
+}

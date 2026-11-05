@@ -24,6 +24,13 @@
       </div>
       <div ref="stickySentinel" class="sticky-sentinel" aria-hidden="true"></div>
       <div class="thread-info" :class="{ frozen: expanded, stuck }">
+        <span v-if="pinnedUser" class="chain-pin" role="button" title="退出楼中楼叙事线高亮" @click.stop="clearChainPin">
+          <RemoteImage v-if="pinnedUser.portrait" kind="avatars" class="chain-pin-avatar"
+            :src="'https://gss0.bdstatic.com/6LZ1dD3d1sgCo2Kml5_Y_D3/sys/portrait/item/' + pinnedUser.portrait"
+            referrerpolicy="no-referrer" />
+          <span class="chain-pin-name">{{ pinnedUser.name }}</span>
+          <span class="material-symbols-outlined chain-pin-close">close</span>
+        </span>
         <span v-if="reply_num > 0" class="reply-entry" role="button"
           :aria-expanded="reply_num > 5 ? expanded : undefined" @click.stop="toggleExpanded">
           <span class="material-symbols-outlined" style="font-size: 16px;">forum</span>
@@ -39,9 +46,9 @@
         <span class="material-symbols-outlined" style="font-size: 16px; margin-left: 10px;">floor</span> {{ floor }} 楼
 
       </div>
-      <SubPostView v-if="reply_num > 0" :tid="tid" :pid="pid" :reply_num="reply_num" :local="local"
+      <SubPostView ref="subpostRef" v-if="reply_num > 0" :tid="tid" :pid="pid" :reply_num="reply_num" :local="local"
         :embedded-images="props.embeddedImages" :expanded="expanded" :floor-avatar="avatar" :floor-uid="uid"
-        :floor-name="user_name" @openUser="openUser"
+        :floor-name="user_name" @openUser="openUser" @pin-change="user => pinnedUser = user"
         @select-image="handleSubpostImage" @register-images="urls => emit('registerImages', urls)">
       </SubPostView>
     </div>
@@ -108,6 +115,14 @@ const stickySentinel = ref<HTMLElement | null>(null);
 const expanded = ref(false);
 const stuck = ref(false);
 let stuckObserver: IntersectionObserver | null = null;
+
+// 楼中楼当前钉住高亮的作者（SubPostView 上报）：thread-info 里显示指示按钮，点击整体退出高亮
+const subpostRef = ref<InstanceType<typeof SubPostView> | null>(null);
+const pinnedUser = ref<{ id: string | number; name: string; portrait: string } | null>(null);
+const clearChainPin = (): void => {
+  pinnedUser.value = null;
+  subpostRef.value?.clearPin();
+};
 
 const openUser = (uid: string | number) => {
   emit('openUser', uid)
@@ -245,6 +260,39 @@ onBeforeUnmount(() => {
 
 .reply-entry:hover {
   background-color: rgba(var(--text-color), 0.1);
+}
+
+/* 楼中楼叙事线钉住指示：头像 用户名 关闭图标，点整个按钮退出高亮。观感同 reply-entry */
+.chain-pin {
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 5px;
+  margin-top: -2px;
+  margin-bottom: -2px;
+  border-radius: 5px;
+  user-select: none;
+  transition: background-color 0.3s ease;
+}
+
+.chain-pin:hover {
+  background-color: rgba(var(--text-color), 0.1);
+}
+
+.chain-pin-avatar {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+}
+
+.chain-pin-name {
+  font-weight: bold;
+}
+
+.chain-pin-close {
+  font-size: 14px;
+  opacity: 0.7;
 }
 
 /* 展开时冻结原始操作栏：负 margin 抵消 padding，静止时不产生布局位移；宽度适配内容。

@@ -2,7 +2,7 @@
   <div ref="rootRef" class="subpost" :class="{ 'preview-fade': reply_num > 5 && !expanded }" @mouseleave="scheduleClear">
     <SubPost v-for="(item, index) in baseList" :key="subpostKey(item)" :thread_content="item.content"
       :class="{ 'chain-dim': isDimmed(index) }" :data-subpost-index="index" @mouseenter="onRowEnter(index)"
-      :target-avatar="targetAvatarUrl(index)"
+      @click="onRowClick(index, $event)" :target-avatar="targetAvatarUrl(index)"
       @openUser="uid => emit('openUser', uid)" @select-image="onSubpostImage" :avatar="item.author.portrait"
       :uid="item.author.id" :user_name="item.author.name_show || item.author.name">
     </SubPost>
@@ -11,7 +11,8 @@
       <div class="subpost-expand-panel">
         <SubPost v-for="(item, index) in extraList" :key="subpostKey(item)" :thread_content="item.content"
           :class="{ 'chain-dim': isDimmed(index + BASE_COUNT) }" :data-subpost-index="index + BASE_COUNT"
-          @mouseenter="onRowEnter(index + BASE_COUNT)" :target-avatar="targetAvatarUrl(index + BASE_COUNT)"
+          @mouseenter="onRowEnter(index + BASE_COUNT)" @click="onRowClick(index + BASE_COUNT, $event)"
+          :target-avatar="targetAvatarUrl(index + BASE_COUNT)"
           @openUser="uid => emit('openUser', uid)" @select-image="onSubpostImage" :avatar="item.author.portrait"
           :uid="item.author.id" :user_name="item.author.name_show || item.author.name">
         </SubPost>
@@ -49,7 +50,7 @@ import { useApi } from '@/composables/useApi';
 import { useUserStore } from '@/stores/user';
 import { archiveViewSubPost } from '@/core/archive';
 import { useImageViewer } from '@/composables/useGlobalProvides';
-import { buildReplyChains, extractReplyTarget } from '@/utils/subpostChain';
+import { buildReplyChains, expandChain, extractReplyTarget } from '@/utils/subpostChain';
 import { processContentElements } from '@/utils/helper';
 import type { ContentElement } from '@/types/common';
 
@@ -85,6 +86,8 @@ interface Emits {
   (e: 'openUser', uid: string | number): void;
   (e: 'selectImage', url: string): void;
   (e: 'registerImages', urls: string[]): void;
+  /** 钉住高亮的作者变化：null 表示退出钉住；楼层用它同步 thread-info 里的指示按钮 */
+  (e: 'pinChange', user: { id: string | number; name: string; portrait: string } | null): void;
 }
 
 const props = defineProps<Props>();
@@ -115,16 +118,36 @@ const extraList = computed(() => subpost_list.value.slice(BASE_COUNT));
 // protobuf 解出的字段是 id，pid/post_id 只是旧契约的兜底
 const subpostKey = (item: SubPostItem): string => String(item.pid ?? item.post_id ?? item.id ?? '');
 
-// 悬停高亮叙事线：chainSets[i] 为第 i 条回复（自身 + 逐级回复的上文）的下标集合，其余条目压暗。
+// 悬停高亮叙事线：chainSets[i] 为第 i 条回复（自身 + 逐级回复的上文）的下标集合。
 // 状态按实例保存：同一帖子可能同时开在两个分屏里。关闭设置时不读 chainSets，computed 不会被触发计算。
 const chainMeta = computed(() => buildReplyChains(subpost_list.value));
 const chainSets = computed(() => chainMeta.value.chains);
 const hoveredIndex = ref<number | null>(null);
+// 压暗只由点击钉住驱动（悬停只负责叙事线浮窗）：点条目空白处高亮其相关链（含子孙回复），
+// 其余压暗；再点同一条退出，点别的条目则切换。
+const pinnedIndex = ref<number | null>(null);
 const activeChain = computed(() => {
-  if (!settings.highlightReplyChain || hoveredIndex.value === null) return null;
-  return chainSets.value[hoveredIndex.value] ?? null;
+  if (!settings.highlightReplyChain || pinnedIndex.value === null) return null;
+  return expandChain(chainSets.value, pinnedIndex.value);
 });
 const isDimmed = (index: number): boolean => activeChain.value !== null && !activeChain.value.has(index);
+
+/** 只响应条目空白区域的点击：点图片/用户名/@/链接/语音/文字等内容时 target 是更具体的元素，不误触发 */
+const onRowClick = (index: number, event: MouseEvent): void => {
+  const target = event.target as HTMLElement | null;
+  if (!target?.classList.contains('subpost-1') && !target?.classList.contains('subpost-preview')) return;
+  pinnedIndex.value = pinnedIndex.value === index ? null : index;
+};
+
+// 钉住的作者同步给楼层（thread-info 指示按钮），并暴露清除方法供按钮点击时退出高亮
+watch(pinnedIndex, (index) => {
+  const item = index === null ? null : subpost_list.value[index];
+  emit('pinChange', item
+    ? { id: item.author.id, name: item.author.name_show || item.author.name, portrait: item.author.portrait }
+    : null);
+});
+const clearPin = (): void => { pinnedIndex.value = null; };
+defineExpose({ clearPin });
 
 const PORTRAIT_BASE = 'https://gss0.bdstatic.com/6LZ1dD3d1sgCo2Kml5_Y_D3/sys/portrait/item/';
 const portraitUrl = (portrait: string | undefined): string => (portrait ? PORTRAIT_BASE + portrait : '');
@@ -282,7 +305,12 @@ watch(hoveredIndex, (index) => {
   showTimer = window.setTimeout(() => showPreviewFor(index), previewOpen.value ? SWITCH_DELAY : SHOW_DELAY);
 });
 
-watch(() => settings.highlightReplyChain, (enabled) => { if (!enabled) closePreview(); });
+watch(() => settings.highlightReplyChain, (enabled) => {
+  if (!enabled) {
+    closePreview();
+    pinnedIndex.value = null;
+  }
+});
 
 // 文档级监听只在浮窗打开期间挂着：楼中楼实例很多，不能每个都常驻监听滚动
 const insidePreview = (target: EventTarget | null): boolean =>

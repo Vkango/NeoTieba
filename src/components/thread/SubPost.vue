@@ -85,7 +85,7 @@ onMounted(() => { nextTick(() => hydrateVoiceAudios(contentElement.value)); });
   transition: opacity 0.2s ease;
 }
 
-/* 悬停其他回复时不在其叙事线上：压暗。透明度只落在单条上，不影响外层 sticky 的 backdrop-filter */
+/* 不在点击钉住的叙事线上：压暗。透明度只落在单条上，不影响外层 sticky 的 backdrop-filter */
 .subpost-1.chain-dim {
   opacity: 0.4;
 }

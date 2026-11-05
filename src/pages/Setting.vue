@@ -163,7 +163,7 @@ const displaySettings: ComputedRef<SettingItem[]> = computed(() => [
   { id: 'show_collection_rail', icon: 'collections_bookmark', title: '在导航中展示集锦预览', type: 'toggle', desc: '关闭后隐藏左侧头像栏，但仍可将标签拖入左侧区域加入集锦', value: settingsStore.showCollectionRail },
   { id: 'hover_image_preview', icon: 'zoom_in', title: '悬停快速预览图片', type: 'toggle', desc: '鼠标在帖子图片上短暂停留时，于右侧空白处浮动展示大图；空间不足时自动关闭，点击仍进入完整查看器', value: settingsStore.hoverImagePreview },
   { id: 'image_grid', icon: 'grid_view', title: '图片以网格形式呈现', type: 'toggle', desc: '帖子里的多张图片不再逐张换行，而是等宽网格排列并保留间距；图片下方的文本等内容仍另起一行', value: settingsStore.imageGrid },
-  { id: 'highlight_reply_chain', icon: 'forum', title: '悬停高亮楼中楼叙事线', type: 'toggle', desc: '鼠标移入楼中楼回复时，保留它与它逐级回复的上文，其余回复压暗；上文已滚出视野时，在旁边浮窗直接展示这段对话', value: settingsStore.highlightReplyChain },
+  { id: 'highlight_reply_chain', icon: 'forum', title: '点击高亮楼中楼叙事线', type: 'toggle', desc: '点击楼中楼回复的空白处，保留它与相关回复（逐级回复的上文与后续回应），其余回复压暗，再次点击同一条退出；悬停时若上文已滚出视野，仍在旁边浮窗直接展示这段对话', value: settingsStore.highlightReplyChain },
   {
     id: 'theme',
     icon: 'palette',
