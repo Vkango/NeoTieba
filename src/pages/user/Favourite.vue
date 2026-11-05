@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { onMounted, ref, inject, type Ref } from 'vue';
+import { onMounted, ref, inject, provide, type Ref } from 'vue';
+import { PAGE_TAB_KEY } from '@/composables/useOpenedThreadHighlight';
 import { getCurrentUserBduss } from '@/services/user-manage';
 import { useApiStore } from '@/stores';
 import ThreadLite from '@/components/thread/ThreadLite.vue';
@@ -32,6 +33,7 @@ interface ThreadItem {
 }
 
 const props = defineProps<Props>();
+provide(PAGE_TAB_KEY, props.key_);
 const emit = defineEmits<Emits>();
 const updateTabMeta = inject<(info: { key: string | number; title: string; icon: string; icon_invert?: boolean }) => void>('updateTabMeta');
 
@@ -85,7 +87,7 @@ const handleClick = (id: string | number): void => {
       <div class="bgr" v-if="!isLoading">
         <div class="list-title">我的收藏</div>
         <div style="display: flex; gap: 10px; flex-direction: row; flex-wrap: wrap;">
-          <ThreadLite :uid="item.author.user_id" @click="handleClick(item.thread_id)" v-for="item in threadList"
+          <ThreadLite :tid="item.thread_id" :uid="item.author.user_id" @click="handleClick(item.thread_id)" v-for="item in threadList"
             :thread_title="item.title" :media="item.media" :user_name="item.author.name_show || item.author.name"
             :avatar="item.author.user_portrait" :create_time="item.last_time"
             :style="{ opacity: item.is_deleted ? 0.5 : 1 }"

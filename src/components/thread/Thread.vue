@@ -1,5 +1,5 @@
 <template>
-  <div class="thread" data-kb-item @click="emit('openThread')">
+  <div class="thread" data-kb-item :class="{ 'thread-opened': openedInPane }" @click="emit('openThread')">
     <div class="user-info" @click.stop @click="openUser">
       <div class="avatar">
         <RemoteImage kind="avatars" class="avatar"
@@ -46,6 +46,7 @@
 
 <script setup lang="ts">
 import { computed } from 'vue';
+import { useOpenedThreadHighlight } from '@/composables/useOpenedThreadHighlight';
 import { useSettingsStore } from '@/stores/settings';
 const settings = useSettingsStore();
 const blocked = computed(() => ({ avatars: settings.isMediaBlocked('avatars'), images: settings.isMediaBlocked('images'), videos: settings.isMediaBlocked('videos'), audio: settings.isMediaBlocked('audio') }));
@@ -54,6 +55,7 @@ import { getTimeInterval, processContentElements } from '@/utils/helper';
 import type { ContentElement, MediaItem } from '@/types/common';
 import RemoteImage from '@/components/common/RemoteImage.vue';
 
+const { isOpenedInPane } = useOpenedThreadHighlight();
 const props = withDefaults(defineProps<{
   tid?: string | number;
   uid?: string | number;
@@ -83,6 +85,7 @@ const props = withDefaults(defineProps<{
   theme_color: 'var(--text-color)'
 })
 
+const openedInPane = computed(() => isOpenedInPane(props.tid));
 const content = computed(() => processContentElements(props.thread_content as ContentElement[], true, blocked.value));
 const create_time1 = ref<string>('')
 const emit = defineEmits<{

@@ -15,7 +15,7 @@ import type {
 } from '@/types/navigation';
 import { useTabStore } from '@/stores/tabs';
 
-function generateUniqueId(text: string): number {
+export function generateUniqueId(text: string): number {
   let hash = 0;
   if (text.length === 0) return hash;
 

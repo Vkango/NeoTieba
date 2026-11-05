@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref, onMounted, inject, type Ref } from 'vue';
+import { ref, onMounted, inject, provide, type Ref } from 'vue';
+import { PAGE_TAB_KEY } from '@/composables/useOpenedThreadHighlight';
 import { useApiStore } from '@/stores';
 import UserReply from '@/components/reply/UserReply.vue';
 import { sanitize } from '@/utils/sanitizer';
@@ -61,6 +62,7 @@ interface FollowBarItem {
 
 // Props & Emits
 const props = defineProps<Props>();
+provide(PAGE_TAB_KEY, props.key_);
 const emit = defineEmits<Emits>();
 
 // Injects

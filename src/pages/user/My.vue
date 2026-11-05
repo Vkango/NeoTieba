@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, inject, type Ref } from 'vue';
+import { ref, computed, watch, onMounted, inject, provide, type Ref } from 'vue';
+import { PAGE_TAB_KEY } from '@/composables/useOpenedThreadHighlight';
 import { getCurrentUserBduss, getCurrentUserCookies } from '@/services/user-manage';
 import { useApiStore } from '@/stores';
 import { useCollectionStore } from '@/stores/collection';
@@ -15,6 +16,7 @@ interface Props {
 }
 
 const props = defineProps<Props>();
+provide(PAGE_TAB_KEY, props.key_);
 
 // Emits 定义
 interface Emits {

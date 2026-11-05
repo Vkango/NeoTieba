@@ -330,10 +330,15 @@ button:active {
     overflow-y: hidden;
 }
 
+/* 已在分屏中打开且正在显示的帖子条目高亮（列表页激活时） */
+.thread.thread-opened {
+    background-color: rgba(var(--primary-color), 0.1);
+}
+
 .thread {
     width: 80%;
     box-sizing: border-box;
-    padding: 5px 0;
+    padding: 5px 10px;
     display: flex;
     flex-direction: column;
     border-radius: 8px;

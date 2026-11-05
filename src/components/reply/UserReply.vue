@@ -1,5 +1,5 @@
 <template>
-  <div class="thread" data-kb-item @click="onThreadClicked">
+  <div class="thread" data-kb-item :class="{ 'thread-opened': openedInPane }" @click="onThreadClicked">
     <div class="user-info">
       <div class="avatar"><RemoteImage kind="avatars" class="avatar"
           :src="'https://gss0.bdstatic.com/6LZ1dD3d1sgCo2Kml5_Y_D3/sys/portrait/item/' + avatar" /></div>
@@ -21,7 +21,8 @@
 <script setup lang="ts">
 import { useSettingsStore } from "@/stores/settings";
 const settings = useSettingsStore();
-import { onMounted, ref, type PropType } from 'vue';
+import { computed, onMounted, ref, type PropType } from 'vue';
+import { useOpenedThreadHighlight } from '@/composables/useOpenedThreadHighlight';
 import UserReplyContentDisplay from './UserReplyContentDisplay.vue';
 const create_time1 = ref<string>('')
 function formatDate(timestamp: number): string {
@@ -38,6 +39,7 @@ const emit = defineEmits<{ openThread: [threadId: string | number] }>();
 function onThreadClicked() {
   emit('openThread', props.threadId);
 }
+const { isOpenedInPane } = useOpenedThreadHighlight();
 const props = defineProps({
   uid: { type: [String, Number], default: '' },
   msg: {
@@ -79,6 +81,7 @@ const props = defineProps({
 onMounted(() => {
   create_time1.value = formatDate(props.create_time);
 })
+const openedInPane = computed(() => isOpenedInPane(props.threadId));
 </script>
 <style scoped>
 .thread-info {
