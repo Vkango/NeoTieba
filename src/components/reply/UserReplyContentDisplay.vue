@@ -1,7 +1,7 @@
 <template>
   <div class="thread">
     <div class="thread-preview">
-      <div class="thread-content" v-html="content">
+      <div class="thread-content" ref="contentElement" v-html="content">
       </div>
       <div class="thread-info">
         <span class="material-symbols-outlined" style="font-size: 16px;">schedule</span>{{ create_time1 }}
@@ -14,8 +14,9 @@ import { computed } from 'vue';
 import { useSettingsStore } from '@/stores/settings';
 const settings = useSettingsStore();
 const blocked = computed(() => ({ avatars: settings.isMediaBlocked('avatars'), images: settings.isMediaBlocked('images'), videos: settings.isMediaBlocked('videos'), audio: settings.isMediaBlocked('audio') }));
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, nextTick, watch } from 'vue';
 import { processContentElements } from '@/utils/helper';
+import { hydrateVoiceAudios } from '@/utils/amr-voice';
 import type { ContentElement } from '@/types/common';
 const create_time1 = ref<string>('');
 const content = computed(() => processContentElements(props.content as ContentElement[], false, blocked.value));
@@ -42,8 +43,13 @@ const props = defineProps({
     default: 0
   },
 })
+
+// 语音解码水合（须在 defineProps 之后：watch 初始化会立即求值 content，提前会踩 props 的 TDZ）
+const contentElement = ref<HTMLElement | null>(null);
+watch(content, () => { nextTick(() => hydrateVoiceAudios(contentElement.value)); });
 onMounted(() => {
   create_time1.value = formatDate(props.createTime as any);
+  nextTick(() => hydrateVoiceAudios(contentElement.value));
 })
 </script>
 

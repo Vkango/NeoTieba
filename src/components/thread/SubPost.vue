@@ -7,7 +7,7 @@
     <div class="subpost-preview">
       <span class="user-name" @click="emit('openUser', props.uid)">{{ user_name }}<small
           v-if="settings.showUserId && props.uid && String(props.uid) !== '0'">
-          · UID {{ props.uid }}</small></span>：<span class="thread-content" @click="handleClick"
+          · UID {{ props.uid }}</small></span>：<span ref="contentElement" class="thread-content" @click="handleClick"
         @error.capture="archiveFallback" v-html="content">
       </span>
     </div>
@@ -15,13 +15,14 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import { useSettingsStore } from '@/stores/settings';
 const settings = useSettingsStore();
 const blocked = computed(() => ({ avatars: settings.isMediaBlocked('avatars'), images: settings.isMediaBlocked('images'), videos: settings.isMediaBlocked('videos'), audio: settings.isMediaBlocked('audio') }));
 
 import { processContentElements } from '@/utils/helper';
 import { useOfflineMedia, useArchiveFallback } from '@/composables/useOfflineMedia';
+import { hydrateVoiceAudios } from '@/utils/amr-voice';
 import type { ContentElement } from '@/types/common';
 const offlineMedia = useOfflineMedia();
 const archiveFallback = useArchiveFallback();
@@ -59,6 +60,12 @@ const props = defineProps({
   /** "回复 XXX" 目标用户的头像 URL，有则在昵称前显示小头像 */
   targetAvatar: { type: String, default: '' }
 })
+
+// 楼中楼内容随列表异步插入，渲染后补一轮语音解码水合
+// （须在 defineProps 之后：watch 初始化会立即求值 content，提前会踩 props 的 TDZ）
+const contentElement = ref<HTMLElement | null>(null);
+watch(content, () => { nextTick(() => hydrateVoiceAudios(contentElement.value)); });
+onMounted(() => { nextTick(() => hydrateVoiceAudios(contentElement.value)); });
 </script>
 <style scoped>
 .subpost-1 .avatar {

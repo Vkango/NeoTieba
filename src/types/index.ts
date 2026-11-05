@@ -11,6 +11,8 @@ export interface ContentElement {
     origin_src?: string;
     uid?: string;
     voiceUrl?: string;
+    /** 贴吧语音（type 10）：link/src 为空，播放地址需由 md5 拼接 */
+    voice_md5?: string;
     src?: string;
 }
 

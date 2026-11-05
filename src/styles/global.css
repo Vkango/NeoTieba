@@ -592,3 +592,12 @@ html.macos .tabs {
     border: 1px solid rgba(var(--text-color), 0.12);
     box-shadow: none;
 }
+/* 媒体占位提示（媒体被禁用 / 语音加载失败）：弱化为灰字，不抢正文 */
+.media-placeholder {
+    color: rgba(var(--text-color), 0.45);
+}
+
+/* 语音解码注入期间（voice-audio 尚无 src）：控件置灰示意 */
+.voice-audio[data-voice-state="loading"] {
+    opacity: 0.5;
+}

@@ -61,6 +61,7 @@ import { useOfflineMedia, useArchiveFallback, isArchiveUrl } from '@/composables
 import SubPostView from './SubPostView.vue';
 import { useShareCard, threadUrl, shareAvatarUrl, formatCardDate } from '@/services/share-card/useShareCard';
 import { getTimeInterval, processContentElements } from '@/utils/helper';
+import { hydrateVoiceAudios } from '@/utils/amr-voice';
 import type { ContentElement } from '@/types/common';
 
 // Props和Emits类型定义
@@ -213,10 +214,11 @@ async function preloadBigCdnImages(): Promise<void> {
   }));
 }
 
-watch(content, () => { void preloadBigCdnImages(); });
+watch(content, () => { void preloadBigCdnImages(); nextTick(() => hydrateVoiceAudios(contentElement.value)); });
 
 onMounted(async () => {
   await preloadBigCdnImages();
+  nextTick(() => hydrateVoiceAudios(contentElement.value));
 
   // 冻结状态检测：哨兵离开可视区顶部 => thread-info 吸附
   const root = stickySentinel.value?.closest('.component-container') as HTMLElement | null;

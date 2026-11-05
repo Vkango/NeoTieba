@@ -134,8 +134,16 @@ export function processContentElements(
                         `<video class="thread-reply-img" style="max-height: 450px; max-width: 300px; border-radius: 5px;" src="${resolveUrl(ele.link || '')}" data-remote-src="${ele.link || ''}" referrerpolicy="no-referrer" controls></video>`;
                 }
                 break;
-            case 10: // voice
-                content += blocked.audio ? '<span class="media-placeholder">[语音已禁用]</span>' : dismissMedia ? '' : `<audio src="${resolveUrl(ele.link || ele.voiceUrl || ele.src || '')}" data-remote-src="${ele.link || ele.voiceUrl || ele.src || ''}" controls preload="none"></audio>`;
+            case 10: // voice：贴吧语音是 AMR 裸流，WebView2 无法直接播放；
+                     // 元素的 link/src 为空，播放地址由 voice_md5 拼接（客户端同款规则）；
+                     // 先输出无 src 的占位元素，挂载后由 amr-voice 解码注入 WAV
+                if (blocked.audio) { content += '<span class="media-placeholder">[语音已禁用]</span>'; break; }
+                if (!dismissMedia) {
+                    const voiceMd5 = ele.voice_md5 || '';
+                    const voiceUrl = ele.link || ele.voiceUrl || ele.src
+                        || (voiceMd5 ? `https://tiebac.baidu.com/c/p/voice?voice_md5=${voiceMd5}&play_from=pb_voice_play` : '');
+                    if (voiceUrl) content += `<audio class="voice-audio" controls preload="none" data-amr-src="${resolveUrl(voiceUrl)}" data-remote-src="${voiceUrl}"></audio>`;
+                }
                 break;
             case 18: // tag
             case 40: // search_words

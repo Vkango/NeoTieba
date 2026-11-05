@@ -17,6 +17,8 @@ export interface ContentElement {
     text?: string;
     c?: string;
     link?: string;
+    /** 贴吧语音（type 10）：link/src 为空，播放地址需由 md5 拼接 */
+    voice_md5?: string;
     [key: string]: unknown;
 }
 
