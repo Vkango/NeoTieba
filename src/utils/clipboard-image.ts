@@ -2,7 +2,7 @@ import { writeImage } from 'tauri-plugin-clipboard-x-api';
 import { writeFile, remove } from '@tauri-apps/plugin-fs';
 import { tempDir, join } from '@tauri-apps/api/path';
 import { fetchImage } from '@/core/request';
-import { normalizeMediaUrl } from '@/utils/settings-policy';
+import { isMediaUrl, normalizeMediaUrl } from '@/utils/settings-policy';
 import { isArchiveUrl } from '@/composables/useOfflineMedia';
 
 interface ParsedDataUrl {
@@ -67,14 +67,14 @@ function convertDataUrlToPng(dataUrl: string): Promise<string> {
 /**
  * 按图片来源获取图片字节的 data URL：
  * - data: URL 直接返回；
- * - 归档协议由 Rust 端响应且带 CORS 头，可直接 fetch；
+ * - 归档/media 协议由 Rust 端响应且带 CORS 头，可直接 fetch；
  * - 远程图片走 Rust 代理（fetchImage），绕开防盗链与 CORS，并复用应用代理设置。
  */
 async function resolveImageDataUrl(src: string): Promise<string> {
     if (src.startsWith('data:')) return src;
-    if (isArchiveUrl(src)) {
+    if (isArchiveUrl(src) || isMediaUrl(src)) {
         const response = await fetch(src);
-        if (!response.ok) throw new Error(`归档图片读取失败（HTTP ${response.status}）`);
+        if (!response.ok) throw new Error(`图片读取失败（HTTP ${response.status}）`);
         return blobToDataUrl(await response.blob());
     }
     return fetchImage(normalizeMediaUrl(src));

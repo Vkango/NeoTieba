@@ -1,5 +1,6 @@
 import { inject } from 'vue';
 import { useSettingsStore } from '@/stores/settings';
+import { toMediaUrl } from '@/utils/settings-policy';
 
 export type OfflineMediaResolver = (url: string) => string;
 
@@ -43,6 +44,6 @@ export function useArchiveFallback(): (event: Event) => void {
         const remote = element.getAttribute('data-remote-src');
         if (!remote || element.dataset.remoteFallback) return;
         element.dataset.remoteFallback = '1';
-        element.src = remote;
+        element.src = toMediaUrl(remote);
     };
 }

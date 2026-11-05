@@ -1,4 +1,5 @@
 import type { MediaBlocks } from './settings-policy';
+import { toMediaUrl } from './settings-policy';
 import type { ContentElement } from '@/types';
 import { sanitize } from './sanitizer';
 import { useSettingsStore } from '@/stores/settings';
@@ -34,6 +35,8 @@ export function processContentElements(
     elements: ContentElement[],
     dismissMedia = false,
     blocked: MediaBlocks = { avatars: false, images: false, videos: false, audio: false },
+    // 归档线程传 offlineMedia（远程 URL → archive://）；默认原样输出，
+    // 图片输出点再统一包 toMediaUrl（视频/语音不走 image-only 的 media 协议）。
     resolveUrl: (url: string) => string = (url: string) => url,
     replyTargetAvatar = ''
 ): string {
@@ -52,7 +55,7 @@ export function processContentElements(
         // data-remote-src keeps the ORIGINAL remote URL so that the
         // archive fallback handler can swap it in when the archived
         // copy is missing (e.g. avatars excluded from the archive).
-        return `<img class="thread-reply-img"${grid ? '' : ' style="max-height: 450px; max-width: 300px; border-radius: 5px;"'} src="${src ? resolveUrl(src) : src}" data-full-src="${fullSrc}" data-remote-src="${fullSrc}" referrerpolicy="no-referrer">`;
+        return `<img class="thread-reply-img"${grid ? '' : ' style="max-height: 450px; max-width: 300px; border-radius: 5px;"'} src="${src ? toMediaUrl(resolveUrl(src)) : src}" data-full-src="${fullSrc}" data-remote-src="${fullSrc}" loading="lazy" decoding="async" referrerpolicy="no-referrer">`;
     };
 
     const flushImageRun = () => {
@@ -117,7 +120,7 @@ export function processContentElements(
                 const prevEle = elements[index - 1];
                 if (replyTargetAvatar && !blocked.avatars && !targetAvatarUsed
                     && prevEle?.type === 0 && String(prevEle.text ?? '').trim().endsWith('回复')) {
-                    content += `<img class="at-avatar" src="${resolveUrl(replyTargetAvatar)}" referrerpolicy="no-referrer" alt="">`;
+                    content += `<img class="at-avatar" src="${toMediaUrl(resolveUrl(replyTargetAvatar))}" referrerpolicy="no-referrer" alt="">`;
                     targetAvatarUsed = true;
                 }
                 content += `<button class="at-button" uid="${ele.uid}">${ele.text}</button>`;

@@ -13,7 +13,7 @@ use cookie_manager::{
     get_cookies_string, set_cookie,
 };
 use file_io::{copy_file_to_install_dir, read_file, read_file_bytes, write_file};
-use request::{fetch_image, http_request, test_connection, RequestSchema};
+use request::{fetch_image, fetch_media_image, http_request, test_connection, RequestSchema};
 use thread_archive::{
     archive_delete, archive_list, archive_media_lookup, archive_read_floor, archive_read_meta,
     archive_read_page,
@@ -388,6 +388,110 @@ fn handle_archive_media_request(app: &tauri::AppHandle, uri: &str) -> tauri::htt
     }
 }
 
+/// Receives the active proxy from the frontend settings store so media
+/// protocol downloads follow proxy changes (scheme requests carry none).
+#[command]
+fn set_image_proxy(proxy_url: Option<String>) {
+    request::set_image_proxy(proxy_url);
+}
+
+/// Extracts the percent-encoded target URL from a media request URI.
+///
+/// The webview may deliver the custom scheme in several shapes depending on
+/// platform and Tauri/wry version (see `parse_archive_uri`):
+/// - `http://media.localhost/<encoded-url>`   (Windows mapping)
+/// - `media://localhost/<encoded-url>`
+/// - `media://<encoded-url>`                  (encoded URL in the host)
+/// The encoded segment is taken from the raw string: `Url::path()` may
+/// already have decoded `%2F`, corrupting the target URL.
+fn parse_media_uri(uri: &str) -> Option<String> {
+    const MARKERS: [&str; 3] = [
+        "http://media.localhost/",
+        "https://media.localhost/",
+        "media://localhost/",
+    ];
+    let encoded = MARKERS
+        .iter()
+        .find_map(|marker| uri.strip_prefix(marker))
+        .or_else(|| uri.strip_prefix("media://"))?;
+    // Cut any query/fragment appended by cache-busting retries, and a stray
+    // trailing slash the webview may add to the host-only form.
+    let encoded = encoded
+        .split(['?', '#'])
+        .next()
+        .unwrap_or(encoded)
+        .trim_end_matches('/');
+    let decoded = percent_encoding::percent_decode_str(encoded)
+        .decode_utf8()
+        .ok()?
+        .into_owned();
+    if decoded.starts_with("http://") || decoded.starts_with("https://") {
+        Some(decoded)
+    } else {
+        None
+    }
+}
+
+/// Serves online images to the webview over the `media` scheme: streams raw
+/// bytes with long-lived cache headers so WebView loads and decodes them
+/// natively instead of shuttling base64 strings over IPC.
+async fn handle_media_request(uri: &str) -> tauri::http::Response<Vec<u8>> {
+    let not_found = |message: String| {
+        tauri::http::Response::builder()
+            .status(404)
+            .header("content-type", "text/plain; charset=utf-8")
+            .body(message.into_bytes())
+            .unwrap_or_else(|_| tauri::http::Response::new(Vec::new()))
+    };
+
+    let Some(url) = parse_media_uri(uri) else {
+        eprintln!("[media] unparseable media request: {uri}");
+        return not_found(format!("invalid media request: {uri}"));
+    };
+
+    match fetch_media_image(url).await {
+        Ok((mime, bytes)) => tauri::http::Response::builder()
+            .status(200)
+            .header("content-type", mime)
+            .header("cache-control", "max-age=86400")
+            .header("access-control-allow-origin", "*")
+            .body(bytes)
+            .unwrap_or_else(|_| not_found("response build failed".to_string())),
+        Err(error) => not_found(error),
+    }
+}
+
+#[cfg(test)]
+mod media_uri_tests {
+    use super::parse_media_uri;
+
+    const TARGET: &str = "http://imgsrc.baidu.com/forum/pic/item/abc.jpg?x=1";
+    // encodeURIComponent 风格编码后的 TARGET（协议相对头已由前端补成 http:）。
+    const ENCODED: &str = "http%3A%2F%2Fimgsrc.baidu.com%2Fforum%2Fpic%2Fitem%2Fabc.jpg%3Fx%3D1";
+
+    #[test]
+    fn parses_all_webview_uri_shapes() {
+        for uri in [
+            format!("http://media.localhost/{ENCODED}"),
+            format!("https://media.localhost/{ENCODED}"),
+            format!("media://localhost/{ENCODED}"),
+            format!("media://{ENCODED}"),
+            format!("media://{ENCODED}/"), // host 形态可能被补上尾部斜杠
+            format!("http://media.localhost/{ENCODED}?r=1"), // 缓存穿透重试
+        ] {
+            assert_eq!(parse_media_uri(&uri).as_deref(), Some(TARGET), "uri: {uri}");
+        }
+    }
+
+    #[test]
+    fn rejects_non_http_targets_and_garbage() {
+        assert_eq!(parse_media_uri("http://media.localhost/data%3Aimage%2Fpng"), None);
+        assert_eq!(parse_media_uri("http://media.localhost/"), None);
+        assert_eq!(parse_media_uri("https://example.com/nope"), None);
+        assert_eq!(parse_media_uri("media://localhost/"), None);
+    }
+}
+
 fn main() {
     let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -413,6 +517,14 @@ fn main() {
         });
     });
 
+    builder = builder.register_asynchronous_uri_scheme_protocol("media", |_ctx, request, responder| {
+        let uri = request.uri().to_string();
+        tauri::async_runtime::spawn(async move {
+            let response = handle_media_request(&uri).await;
+            responder.respond(response);
+        });
+    });
+
     builder
         .invoke_handler(tauri::generate_handler![
             toggle_devtools,
@@ -426,6 +538,7 @@ fn main() {
             copy_file_to_install_dir,
             write_file,
             fetch_image_base64,
+            set_image_proxy,
             open_login,
             finish_browser_login,
             cancel_browser_login,

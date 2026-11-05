@@ -12,7 +12,7 @@
                 <p v-if="imageBlocked" role="status">配图已禁用</p>
                 <img v-if="!imageBlocked" v-show="!imageFailed" ref="imageRef" :src="resolvedImageSrc"
                     :style="fittedImageStyle" class="viewer-image" alt="Preview" draggable="false"
-                    referrerpolicy="no-referrer" @load="onImageLoad" @error="handleImageError" />
+                    decoding="async" referrerpolicy="no-referrer" @load="onImageLoad" @error="handleImageError" />
             </div>
 
             <!-- Controls Bar -->
@@ -104,8 +104,7 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue';
-import { fetchImage } from '@/core/request';
-import { normalizeMediaUrl } from '@/utils/settings-policy';
+import { toMediaUrl } from '@/utils/settings-policy';
 import { copyImageToClipboard } from '@/utils/clipboard-image';
 import { useSendToast } from '@/composables/useGlobalProvides';
 import { useSettingsStore } from '@/stores/settings';
@@ -172,7 +171,7 @@ const lastMouseY = ref(0);
 const overlayRef = ref<HTMLElement | null>(null);
 const imageRef = ref<HTMLImageElement | null>(null);
 const imageBlocked = computed(() => /^https?:|^\/\//.test(props.imageSrc) && settings.isMediaBlocked('images'));
-const resolvedImageSrc = ref(imageBlocked.value ? '' : props.imageSrc);
+const resolvedImageSrc = ref(imageBlocked.value ? '' : toMediaUrl(props.imageSrc));
 let imageGeneration = 0;
 const proxyAttempted = ref(false);
 const fallbackAttempted = ref(false);
@@ -254,14 +253,12 @@ watch(() => props.visible, (newVal) => {
 
 watch(() => [props.imageSrc, imageBlocked.value], () => {
     imageGeneration++;
-    resolvedImageSrc.value = imageBlocked.value ? '' : props.imageSrc;
+    resolvedImageSrc.value = imageBlocked.value ? '' : toMediaUrl(props.imageSrc);
     proxyAttempted.value = false;
     fallbackAttempted.value = false;
 });
 
-const normalizeImageUrl = normalizeMediaUrl;
-
-async function handleImageError(): Promise<void> {
+function handleImageError(): void {
     if (imageBlocked.value) return;
     const source = props.imageSrc;
     if (source.startsWith('data:')) {
@@ -269,11 +266,11 @@ async function handleImageError(): Promise<void> {
         return;
     }
     // 归档副本缺失（如未保存图片/头像）：按设置换回原始远程 URL 联网加载。
-    if (isArchiveUrl(source)) {
+    if (isArchiveUrl(resolvedImageSrc.value) || isArchiveUrl(source)) {
         if (props.fallbackSrc && settings.archiveOnlineFallback && !fallbackAttempted.value) {
             fallbackAttempted.value = true;
             proxyAttempted.value = false;
-            resolvedImageSrc.value = normalizeImageUrl(props.fallbackSrc);
+            resolvedImageSrc.value = toMediaUrl(props.fallbackSrc);
             return;
         }
         imageFailed.value = true;
@@ -283,15 +280,14 @@ async function handleImageError(): Promise<void> {
         imageFailed.value = true;
         return;
     }
+    // media 协议加载失败：加缓存穿透参数重试一次，仍失败再置失败态。
     proxyAttempted.value = true;
-    const generation = imageGeneration;
-    try {
-        const result = await fetchImage(normalizeImageUrl(source));
-        if (!imageBlocked.value && generation === imageGeneration && props.imageSrc === source) resolvedImageSrc.value = result;
-    } catch (error) {
-        if (props.imageSrc === source) imageFailed.value = true;
-        console.warn('原图加载失败:', source, error);
+    const retrySrc = `${toMediaUrl(source)}?r=1`;
+    if (resolvedImageSrc.value !== retrySrc) {
+        resolvedImageSrc.value = retrySrc;
+        return;
     }
+    imageFailed.value = true;
 }
 
 

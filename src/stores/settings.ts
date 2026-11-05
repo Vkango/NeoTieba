@@ -1,4 +1,4 @@
-import { normalizeMediaBlocks, mediaBlocked, type MediaKind } from '@/utils/settings-policy';
+import { normalizeMediaBlocks, mediaBlocked, validateProxy, type MediaKind } from '@/utils/settings-policy';
 import { computed } from 'vue';
 import { defineStore } from 'pinia';
 import { ref, watch } from 'vue';
@@ -155,6 +155,12 @@ export const useSettingsStore = defineStore('settings', () => {
     const wallpaperSolidColor = ref('#1e1f20');
     const useProxy = ref(false);
     const proxyUrl = ref('');
+    // 代理设置同步给 Rust：media 协议的图片下载在协议 handler 里发起，
+    // 自定义 scheme 请求带不上每请求代理，只能由设置变化时推送。
+    watch([useProxy, proxyUrl], () => {
+        try { void invoke('set_image_proxy', { proxyUrl: validateProxy(useProxy.value, proxyUrl.value) }); }
+        catch { /* 无效代理输入时不推送，Rust 侧保留上一个可用值 */ }
+    }, { immediate: true });
     const enableAutoSign = ref(false);
     const blockList = ref<string[]>([]);
     const threadSaveDefaults = ref<ThreadSaveDefaults>(defaultThreadSaveDefaults());

@@ -49,6 +49,8 @@ function getSavedPosition(): number {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+let persistFrame: number | undefined;
+
 function handleScroll(event: Event) {
   const target = event.target as HTMLElement;
   scrollPosition.value = target.scrollTop;
@@ -58,11 +60,17 @@ function handleScroll(event: Event) {
     return;
   }
 
-  if (storageKey.value) {
-    sessionStorage.setItem(storageKey.value, String(scrollPosition.value));
+  // 滚动是高频事件：持久化与 yscroll 广播合并到 rAF，每帧最多一次。
+  if (persistFrame !== undefined) {
+    return;
   }
-
-  emit('yscroll', target);
+  persistFrame = window.requestAnimationFrame(() => {
+    persistFrame = undefined;
+    if (storageKey.value) {
+      sessionStorage.setItem(storageKey.value, String(scrollPosition.value));
+    }
+    emit('yscroll', target);
+  });
 }
 
 function clearRestoreTimer() {
@@ -155,6 +163,10 @@ onMounted(() => {
 onBeforeUnmount(() => {
   if (identityKey.value) unregisterScroller(identityKey.value, scrollerHandle);
   clearRestoreTimer();
+  if (persistFrame !== undefined) {
+    window.cancelAnimationFrame(persistFrame);
+    persistFrame = undefined;
+  }
 });
 </script>
 

@@ -2,7 +2,7 @@ use reqwest::header::{HeaderValue, COOKIE, REFERER, USER_AGENT};
 use reqwest::{Client, Proxy};
 use serde::Deserialize;
 use serde::Serialize;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::sync::{Mutex, OnceLock};
 use tauri::command;
 
@@ -398,6 +398,82 @@ pub async fn fetch_image(url: &str, proxy_url: Option<&str>) -> Result<(String, 
         .map_err(|error| format!("Failed to read image: {}", error))?
         .to_vec();
 
+    Ok((mime, bytes))
+}
+
+/// Proxy applied to media-protocol image downloads. Custom-scheme requests
+/// carry no per-request proxy, so the frontend settings store pushes the
+/// active proxy here via the `set_image_proxy` command.
+static IMAGE_PROXY: Mutex<Option<String>> = Mutex::new(None);
+
+pub fn set_image_proxy(proxy_url: Option<String>) {
+    let trimmed = proxy_url.filter(|value| !value.trim().is_empty());
+    if let Ok(mut slot) = IMAGE_PROXY.lock() {
+        *slot = trimmed;
+    }
+}
+
+fn image_proxy() -> Option<String> {
+    IMAGE_PROXY.lock().ok().and_then(|slot| slot.clone())
+}
+
+/// Bounded in-memory cache for media-protocol images, keyed by target URL.
+/// FIFO eviction once the total payload exceeds [`MAX_IMAGE_CACHE_BYTES`];
+/// failures are never cached so broken images retry on their next request.
+const MAX_IMAGE_CACHE_BYTES: usize = 64 * 1024 * 1024;
+
+struct ImageCache {
+    entries: HashMap<String, (String, Vec<u8>)>,
+    order: VecDeque<String>,
+    bytes: usize,
+}
+
+impl ImageCache {
+    fn get(&self, url: &str) -> Option<(String, Vec<u8>)> {
+        self.entries.get(url).cloned()
+    }
+
+    fn insert(&mut self, url: &str, mime: &str, bytes: &[u8]) {
+        if bytes.len() > MAX_IMAGE_CACHE_BYTES {
+            return;
+        }
+        if let Some(old) = self.entries.get(url) {
+            self.bytes -= old.1.len();
+        } else {
+            self.order.push_back(url.to_string());
+        }
+        self.bytes += bytes.len();
+        self.entries
+            .insert(url.to_string(), (mime.to_string(), bytes.to_vec()));
+        while self.bytes > MAX_IMAGE_CACHE_BYTES {
+            let Some(oldest) = self.order.pop_front() else {
+                break;
+            };
+            if let Some(old) = self.entries.remove(&oldest) {
+                self.bytes -= old.1.len();
+            }
+        }
+    }
+}
+
+/// Serves media-protocol requests: cache lookup, then `fetch_image` with the
+/// stored proxy (which injects the Referer Tieba's CDN requires).
+pub async fn fetch_media_image(url: String) -> Result<(String, Vec<u8>), String> {
+    static CACHE: OnceLock<Mutex<ImageCache>> = OnceLock::new();
+    let cache = CACHE.get_or_init(|| {
+        Mutex::new(ImageCache {
+            entries: HashMap::new(),
+            order: VecDeque::new(),
+            bytes: 0,
+        })
+    });
+    if let Some(hit) = cache.lock().ok().and_then(|cache| cache.get(&url)) {
+        return Ok(hit);
+    }
+    let (mime, bytes) = fetch_image(&url, image_proxy().as_deref()).await?;
+    if let Ok(mut cache) = cache.lock() {
+        cache.insert(&url, &mime, &bytes);
+    }
     Ok((mime, bytes))
 }
 

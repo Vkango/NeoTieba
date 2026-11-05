@@ -33,3 +33,21 @@ export function connectionMessage(status: number, milliseconds: number): string 
 export function normalizeMediaUrl(value: string): string {
  return value.startsWith('//') ? `http:${value}` : value;
 }
+
+// Online images load over the `media` custom scheme (http://media.localhost/
+// in the WebView2 mapping): the Rust handler streams raw bytes with Referer
+// spoofing, app proxy support and cache headers — no base64 over IPC.
+// Local schemes (archive://, its WebView2 http://archive.localhost/ mapping,
+// and media:// itself) are passed through untouched. The encoded target goes
+// in the path; retries may append `?r=1` to bust the WebView cache.
+export function toMediaUrl(value: string): string {
+ const url = normalizeMediaUrl(value);
+ return /^https?:\/\//.test(url) && !/^https?:\/\/(archive|media)\.localhost\//.test(url)
+  ? `http://media.localhost/${encodeURIComponent(url)}`
+  : url;
+}
+
+/** 判断 URL 是否指向本机 media 协议（含 WebView2 的 http://media.localhost/ 映射形态）。 */
+export function isMediaUrl(value: string): boolean {
+ return value.startsWith('media://') || /^https?:\/\/media\.localhost\//.test(value);
+}

@@ -54,8 +54,7 @@ import { useSettingsStore } from '@/stores/settings';
 const settings = useSettingsStore();
 const blocked = computed(() => ({ avatars: settings.isMediaBlocked('avatars'), images: settings.isMediaBlocked('images'), videos: settings.isMediaBlocked('videos'), audio: settings.isMediaBlocked('audio') }));
 import { onMounted, onBeforeUnmount, ref, inject, nextTick } from 'vue';
-import { fetchImage } from '@/core/request';
-import { normalizeMediaUrl } from '@/utils/settings-policy';
+import { toMediaUrl } from '@/utils/settings-policy';
 import { watch } from 'vue';
 import { useOfflineMedia, useArchiveFallback, isArchiveUrl } from '@/composables/useOfflineMedia';
 import SubPostView from './SubPostView.vue';
@@ -175,49 +174,33 @@ const handleShare = () => {
     qrUrl: threadUrl(props.tid, props.pid)
   });
 };
-const handleImageError = async (event: Event): Promise<void> => {
+const handleImageError = (event: Event): void => {
   const image = event.target as HTMLImageElement;
   if (blocked.value.images || !image.isConnected) return;
-  if (!image.classList.contains('thread-reply-img') || image.dataset.proxyAttempted) return;
-  // 归档副本缺失时优先联网回退（恢复原始 URL），远程加载再失败才走代理。
+  if (!image.classList.contains('thread-reply-img')) return;
+  if (image.dataset.retryAttempted) {
+    // 重试仍失败：换成文字占位，避免破裂图标。
+    const placeholder = document.createElement('span');
+    placeholder.className = 'media-placeholder';
+    placeholder.textContent = '图片加载失败';
+    image.replaceWith(placeholder);
+    return;
+  }
+  // 归档副本缺失时优先联网回退（恢复原始远程 URL），失败再走缓存穿透重试。
   if (isArchiveUrl(image.getAttribute('src') || '')) {
     archiveFallback(event);
     return;
   }
   if (offlineMedia(image.getAttribute('data-full-src') || '') !== (image.getAttribute('data-full-src') || '')) return;
-  image.dataset.proxyAttempted = 'true';
+  image.dataset.retryAttempted = 'true';
+  // media 协议加载失败：加缓存穿透参数重试一次；Rust 端失败不进缓存，重试即重新下载。
   const source = image.getAttribute('data-full-src') || image.src;
-  const url = normalizeMediaUrl(source);
-  try {
-    const result = await fetchImage(url);
-    if (!blocked.value.images && image.isConnected) image.src = result;
-  } catch (error) {
-    console.warn('高清图片加载失败:', source, error);
-  }
+  image.src = `${toMediaUrl(source)}?r=1`;
 };
 
-async function preloadBigCdnImages(): Promise<void> {
-  await nextTick();
-  if (blocked.value.images) return;
-  const images = contentElement.value?.querySelectorAll<HTMLImageElement>('.thread-reply-img[data-full-src]') || [];
-  await Promise.all(Array.from(images).map(async (image) => {
-    const source = image.getAttribute('data-full-src');
-    if (!source || source.startsWith('data:')) return;
-    if (offlineMedia(source) !== source) return;
-    const url = normalizeMediaUrl(source);
-    try {
-      const result = await fetchImage(url);
-      if (!blocked.value.images && image.isConnected) image.src = result;
-    } catch (error) {
-      console.warn('big_cdn_src 加载失败:', source, error);
-    }
-  }));
-}
+watch(content, () => nextTick(() => hydrateVoiceAudios(contentElement.value)));
 
-watch(content, () => { void preloadBigCdnImages(); nextTick(() => hydrateVoiceAudios(contentElement.value)); });
-
-onMounted(async () => {
-  await preloadBigCdnImages();
+onMounted(() => {
   nextTick(() => hydrateVoiceAudios(contentElement.value));
 
   // 冻结状态检测：哨兵离开可视区顶部 => thread-info 吸附

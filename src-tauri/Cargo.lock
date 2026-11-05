@@ -2683,6 +2683,7 @@ dependencies = [
  "http",
  "log",
  "memmap2 0.9.11",
+ "percent-encoding",
  "prost",
  "reqwest 0.12.28",
  "serde",
