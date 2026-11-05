@@ -1252,8 +1252,7 @@ onMounted(async (): Promise<void> => {
   width: calc(100% - 70px);
   /* 顶到 0px 并用 padding 补出原 5px 空隙：标签栏上缘的空白也属于
      data-tauri-drag-region，鼠标移到窗口最顶端仍可拖动窗口 */
-  height: 47px;
-  padding-top: 5px;
+  height: 45px;
   box-sizing: border-box;
   z-index: 1090;
   transition: left 0.3s ease, width 0.3s ease, grid-template-columns 0.3s ease;

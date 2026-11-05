@@ -8,10 +8,12 @@
         <div class="pane-current-title">{{ activeStripTab.title }}</div>
       </template>
     </div>
-    <transition-group v-else ref="stripRef" name="tab-list"
-      :move-class="isDragging || isSettling ? 'tab-drag-move' : 'tab-list-move'" tag="div" class="tab-strip-tabs"
-      data-tauri-drag-region @wheel="onTabScroll" @scroll="updateDragPreview"
-      @before-leave="(el: Element) => pinLeavingTab(el as HTMLElement)">
+    <HorizontalMaskScroll v-else ref="maskRef" class="tab-strip-mask" :fade-width="16"
+      data-tauri-drag-region @scroll="updateDragPreview">
+      <transition-group ref="stripRef" name="tab-list"
+        :move-class="isDragging || isSettling ? 'tab-drag-move' : 'tab-list-move'" tag="div" class="tab-strip-tabs"
+        data-tauri-drag-region
+        @before-leave="(el: Element) => pinLeavingTab(el as HTMLElement)">
       <RippleButton class="tab-ripplebutton" v-for="tab in stripTabs" :class="{
         'selected': tabStore.isTabVisibleInPane(tab),
         'invert': tab.icon_invert,
@@ -30,7 +32,8 @@
         <span v-if="isMain && tabStore.splitOpenMode === 'main' && tabStore.isTabVisibleInPane(tab)"
           class="main-indicator"></span>
       </RippleButton>
-    </transition-group>
+      </transition-group>
+    </HorizontalMaskScroll>
   </div>
 </template>
 
@@ -40,6 +43,7 @@ import { computed, inject, ref, onMounted, onBeforeUnmount, nextTick, watch } fr
 import { useTabStore } from '@/stores/tabs';
 import { useCollectionStore, DEFAULT_GROUP_ID } from '@/stores/collection';
 import RippleButton from '#components/common/RippleButton.vue';
+import HorizontalMaskScroll from '#components/common/HorizontalMaskScroll.vue';
 import { getTabDragPreview, type DragTabLayout } from './tab-drag';
 import { openContextMenu, type ContextMenuItem } from '@/utils/contextMenu';
 import { getTabLink } from '@/utils/tab-link';
@@ -92,6 +96,12 @@ const tabWidth = computed(() => {
  *  窄分屏模式下标签列表会被卸载，挂在上面就再也量不到恢复 */
 const rootRef = ref<HTMLElement | null>(null);
 const stripRef = ref<{ $el: HTMLElement } | null>(null);
+/** 标签条横向滚动容器（HorizontalMaskScroll 根元素）：拖拽补偿与矩形命中都以它为准 */
+const maskRef = ref<{ $el: HTMLElement } | null>(null);
+
+function scrollContainerEl(): HTMLElement | null {
+  return maskRef.value?.$el ?? stripRef.value?.$el ?? null;
+}
 const isDragging = ref(false);
 const isSettling = ref(false);
 const settlingTabId = ref<number | null>(null);
@@ -108,12 +118,6 @@ interface DragSessionShape {
 }
 let dragSession: DragSessionShape | null = null;
 let suppressClick = false;
-
-const onTabScroll = (event: WheelEvent): void => {
-  const container = stripRef.value?.$el;
-  if (!container) return;
-  container.scrollLeft += event.deltaY;
-};
 
 onMounted(() => {
   const el = rootRef.value;
@@ -145,7 +149,7 @@ function getTabStyle(tab: TabItem): Record<string, string> {
 function startDrag(event: MouseEvent, tab: TabItem): void {
   if (event.button !== 0 || tab.isClosing || dragSession || isSettling.value) return;
   if ((event.target as HTMLElement).closest('#close')) return;
-  const container = stripRef.value?.$el;
+  const container = scrollContainerEl();
   if (!container) return;
   suppressClick = false;
   const elements = Array.from(container.querySelectorAll<HTMLElement>('.tab-ripplebutton'))
@@ -174,7 +178,7 @@ function startDrag(event: MouseEvent, tab: TabItem): void {
 function updateDragPreview(): void {
   const session = dragSession;
   if (!session || session.finishing || !isDragging.value) return;
-  const scroll = stripRef.value?.$el.scrollLeft ?? session.scrollLeft;
+  const scroll = scrollContainerEl()?.scrollLeft ?? session.scrollLeft;
   const offset = session.currentX - session.startX + scroll - session.scrollLeft;
   const preview = getTabDragPreview(session.layout, session.id, offset);
   session.order = preview.order;
@@ -284,7 +288,7 @@ function onDrag(event: MouseEvent): void {
     return;
   }
   // 自己的标签条内 → 排序预览；最后一个标签右侧的空白 → 新建分屏
-  const stripRect = stripRef.value?.$el?.getBoundingClientRect();
+  const stripRect = scrollContainerEl()?.getBoundingClientRect();
   const overOwnStrip = !!stripRect
     && event.clientX >= stripRect.left && event.clientX <= stripRect.right
     && event.clientY >= stripRect.top && event.clientY <= stripRect.bottom;
@@ -694,14 +698,18 @@ function getIconPath(icon: string): string {
   user-select: none;
 }
 
-.tab-strip-tabs {
+/* 滚动外壳（HorizontalMaskScroll）：占满标签条，横向滚动由它负责 */
+.tab-strip-mask {
   flex: 1 1 auto;
   min-width: 0;
+}
+
+.tab-strip-tabs {
+  flex: 0 0 auto;
+  min-width: 100%;
   display: flex;
   flex-direction: row;
   flex-wrap: nowrap;
-  overflow-x: hidden;
-  overflow-y: hidden;
 }
 
 /* 窄分屏的紧凑标签条：只读展示当前页图标+标题，不响应点击/拖拽，
@@ -732,10 +740,6 @@ function getIconPath(icon: string): string {
   overflow: hidden;
   text-overflow: ellipsis;
   opacity: 0.8;
-}
-
-.tab-strip-tabs:hover {
-  overflow-x: scroll;
 }
 
 /* 主分屏标识：选中标签左侧的圆角竖线（主题色），绝对定位不占布局空间 */
