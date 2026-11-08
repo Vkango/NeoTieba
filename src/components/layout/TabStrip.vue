@@ -8,30 +8,29 @@
         <div class="pane-current-title">{{ activeStripTab.title }}</div>
       </template>
     </div>
-    <HorizontalMaskScroll v-else ref="maskRef" class="tab-strip-mask" :fade-width="16"
-      data-tauri-drag-region @scroll="updateDragPreview">
+    <HorizontalMaskScroll v-else ref="maskRef" class="tab-strip-mask" :fade-width="16" data-tauri-drag-region
+      @scroll="updateDragPreview">
       <transition-group ref="stripRef" name="tab-list"
         :move-class="isDragging || isSettling ? 'tab-drag-move' : 'tab-list-move'" tag="div" class="tab-strip-tabs"
-        data-tauri-drag-region
-        @before-leave="(el: Element) => pinLeavingTab(el as HTMLElement)">
-      <RippleButton class="tab-ripplebutton" v-for="tab in stripTabs" :class="{
-        'selected': tabStore.isTabVisibleInPane(tab),
-        'invert': tab.icon_invert,
-        'dragging': tabStore.draggingTabId === tab.id,
-        'closing': tab.isClosing
-      }" :key="tab.id" :data-tab-id="tab.id" @click="handleClick(tab)" @mousedown.stop="startDrag($event, tab)"
-        @contextmenu.prevent.stop="openTabContextMenu($event, tab)" :style="getTabStyle(tab)">
-        <div class="tab-content">
-          <img class="icon" :class="{ 'invert': tab.icon_invert }" :src="getIconPath(tab.icon)"
-            referrerpolicy="no-referrer" />
-          <div class="title">{{ tab.title }}</div>
-          <span v-if="tab.closable !== false" class="material-symbols-outlined" id="close" style="font-size: 12px;"
-            @click.stop="handleDelete(tab)">close</span>
-        </div>
-        <!-- 主分屏标识（仅固定主分屏模式显示）：竖线绝对定位在标签左侧，不参与内容布局 -->
-        <span v-if="isMain && tabStore.splitOpenMode === 'main' && tabStore.isTabVisibleInPane(tab)"
-          class="main-indicator"></span>
-      </RippleButton>
+        data-tauri-drag-region @before-leave="(el: Element) => pinLeavingTab(el as HTMLElement)">
+        <RippleButton class="tab-ripplebutton" v-for="tab in stripTabs" :class="{
+          'selected': tabStore.isTabVisibleInPane(tab),
+          'invert': tab.icon_invert,
+          'dragging': tabStore.draggingTabId === tab.id,
+          'closing': tab.isClosing
+        }" :key="tab.id" :data-tab-id="tab.id" @click="handleClick(tab)" @mousedown.stop="startDrag($event, tab)"
+          @contextmenu.prevent.stop="openTabContextMenu($event, tab)" :style="getTabStyle(tab)">
+          <div class="tab-content">
+            <img class="icon" :class="{ 'invert': tab.icon_invert }" :src="getIconPath(tab.icon)"
+              referrerpolicy="no-referrer" />
+            <div class="title" :class="{ 'title-overflow': overflowingTitleIds.has(tab.id) }">{{ tab.title }}</div>
+            <span v-if="tab.closable !== false" class="material-symbols-outlined" id="close" style="font-size: 12px;"
+              @click.stop="handleDelete(tab)">close</span>
+          </div>
+          <!-- 主分屏标识（仅固定主分屏模式显示）：竖线绝对定位在标签左侧，不参与内容布局 -->
+          <span v-if="isMain && tabStore.splitOpenMode === 'main' && tabStore.isTabVisibleInPane(tab)"
+            class="main-indicator"></span>
+        </RippleButton>
       </transition-group>
     </HorizontalMaskScroll>
   </div>
@@ -66,6 +65,7 @@ const isMain = computed(() => props.groupId === tabStore.mainGroupId);
    分屏再窄标签也不会互相重叠或压到邻屏 */
 const stripWidth = ref(0);
 let stripResizeObserver: ResizeObserver | null = null;
+const overflowingTitleIds = ref(new Set<number>());
 
 const TAB_MAX_WIDTH = 180;
 const TAB_MIN_WIDTH = 56;
@@ -125,9 +125,36 @@ onMounted(() => {
   stripWidth.value = el.clientWidth;
   stripResizeObserver = new ResizeObserver((entries) => {
     stripWidth.value = entries[0]?.contentRect.width ?? 0;
+    void measureTitleOverflow();
   });
   stripResizeObserver.observe(el);
+  void measureTitleOverflow();
 });
+
+async function measureTitleOverflow(): Promise<void> {
+  await nextTick();
+  const container = stripRef.value?.$el;
+  if (!container) {
+    overflowingTitleIds.value = new Set();
+    return;
+  }
+
+  const overflowing = new Set<number>();
+  for (const button of Array.from(container.querySelectorAll<HTMLElement>('.tab-ripplebutton'))) {
+    const title = button.querySelector<HTMLElement>('.title');
+    const id = Number(button.dataset.tabId);
+    if (title && Number.isFinite(id) && title.scrollWidth > title.clientWidth + 1) {
+      overflowing.add(id);
+    }
+  }
+  overflowingTitleIds.value = overflowing;
+}
+
+watch(
+  () => stripTabs.value.map((tab) => `${tab.id}:${tab.title}`).join('|'),
+  () => void measureTitleOverflow(),
+  { flush: 'post' }
+);
 
 function getTabStyle(tab: TabItem): Record<string, string> {
   const isTabDragging = tabStore.draggingTabId === tab.id && isDragging.value;
@@ -765,7 +792,7 @@ function getIconPath(icon: string): string {
 
 #close {
   position: absolute;
-  right: 10px;
+  right: 0px;
 }
 
 #close:hover {
@@ -840,13 +867,16 @@ function getIconPath(icon: string): string {
 }
 
 .title {
-  left: 35px;
-  width: calc(100% - 60px);
+  left: 25px;
+  width: calc(100% - 50px);
   overflow: hidden;
   position: absolute;
   white-space: nowrap;
-  -webkit-mask-image: linear-gradient(to right, black, black, black, black, transparent);
-  mask-image: linear-gradient(to right, black, black, black, black, transparent);
+}
+
+.title.title-overflow {
+  -webkit-mask-image: linear-gradient(to right, black, black, black, transparent);
+  mask-image: linear-gradient(to right, black, black, black, transparent);
 }
 
 .tab-ripplebutton.selected {
