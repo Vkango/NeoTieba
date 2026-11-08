@@ -1066,20 +1066,19 @@ onMounted(async (): Promise<void> => {
     <Transition name="notification-box">
       <TabList class="notification-box" v-if="showTabList" @refresh="onRefreshTab"></TabList>
     </Transition>
-    <Transition name="notification-box">
-      <Notification ref="notificationComponent" v-show="!showNotificationBox && !showTabList" />
-    </Transition>
-    <Transition name="notification-box">
-      <NotificationBox class="notification-box" v-if="showNotificationBox && !showTabList && notificationComponent"
-        :tabsRef="notificationComponent">
-      </NotificationBox>
-    </Transition>
     <CollectionDrawer />
     <!-- 集锦拖拽浮层：分组名胶囊 + 拖拽删除高亮区（头像栏/集锦面板共用） -->
     <CollectionDragOverlay />
-    <!-- 图片查看器与 Toast 必须盖过楼中楼卡片等弹窗（3200 层）。
-         传送至 body，与楼中楼卡片同处根层叠上下文，避免被容器内的层叠上下文压住。 -->
+    <!-- 通知、图片查看器与 Toast 传送至 body，避免被主窗口容器的层叠上下文压住。 -->
     <Teleport to="body">
+      <Transition name="notification-box">
+        <Notification ref="notificationComponent" v-show="!showNotificationBox && !showTabList" />
+      </Transition>
+      <Transition name="notification-box">
+        <NotificationBox class="notification-box" v-if="showNotificationBox && !showTabList && notificationComponent"
+          :tabsRef="notificationComponent">
+        </NotificationBox>
+      </Transition>
       <!-- 悬停快速预览：利用阅读区右侧空白浮动展示，层级低于图片查看器 -->
       <ImageHoverPreview />
       <ImageViewer :imageSrc="imageViewerSrc" :visible="imageViewerVisibility" @close="imageViewerVisibility = false">

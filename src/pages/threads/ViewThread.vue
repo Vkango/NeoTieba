@@ -935,26 +935,29 @@ const nextPage = async (): Promise<void> => {
       <ThreadSaveDialog v-model:open="isSaveOpen" :title="props.local ? '继续保存本帖归档' : '保存帖子'"
         :archive-meta="archiveMeta" :busy="isSaving" @start="startSave" />
     </section>
-      <Transition name="fade">
-        <div v-if="isJumpOpen" class="jump-overlay" @click.self="!isThreadsLoading && (isJumpOpen = false)">
-          <section class="jump-card" role="dialog" aria-modal="true" :aria-labelledby="'jump-title-' + props.key_">
-            <form @submit.prevent="jumpToPage">
-              <h3 :id="'jump-title-' + props.key_">{{ readerOpen ? '跳转到帖子页' : '跳转到指定页' }}</h3>
-              <p>当前第 {{ readingPage }} 页<span v-if="totalPages">，共 {{ totalPages }} 页</span></p>
-              <label :for="'thread-page-input-' + props.key_">页码</label>
-              <input :id="'thread-page-input-' + props.key_" ref="pageInputRef" v-model="jumpInput" type="text"
-                inputmode="numeric" :disabled="isThreadsLoading" autocomplete="off" :aria-invalid="Boolean(jumpError)"
-                :aria-describedby="'jump-error-' + props.key_" />
-              <p :id="'jump-error-' + props.key_" class="jump-error" aria-live="polite">{{ jumpError }}</p>
-              <div class="jump-buttons">
-                <RippleButton type="button" :disabled="isThreadsLoading" @click="isJumpOpen = false">取消</RippleButton>
-                <RippleButton type="submit" :disabled="isThreadsLoading">{{ isThreadsLoading ? '加载中…' : '跳转' }}
-                </RippleButton>
-              </div>
-            </form>
-          </section>
-        </div>
-      </Transition>
+      <Teleport to="body">
+        <Transition name="fade">
+          <div v-if="isJumpOpen" class="jump-overlay" @click.self="!isThreadsLoading && (isJumpOpen = false)"
+            @keydown.esc.stop="isJumpOpen = false">
+            <section class="jump-card" role="dialog" aria-modal="true" :aria-labelledby="'jump-title-' + props.key_">
+              <form @submit.prevent="jumpToPage">
+                <h3 :id="'jump-title-' + props.key_">{{ readerOpen ? '跳转到帖子页' : '跳转到指定页' }}</h3>
+                <p>当前第 {{ readingPage }} 页<span v-if="totalPages">，共 {{ totalPages }} 页</span></p>
+                <label :for="'thread-page-input-' + props.key_">页码</label>
+                <input :id="'thread-page-input-' + props.key_" ref="pageInputRef" v-model="jumpInput" type="text"
+                  inputmode="numeric" :disabled="isThreadsLoading" autocomplete="off" :aria-invalid="Boolean(jumpError)"
+                  :aria-describedby="'jump-error-' + props.key_" />
+                <p :id="'jump-error-' + props.key_" class="jump-error" aria-live="polite">{{ jumpError }}</p>
+                <div class="jump-buttons">
+                  <RippleButton type="button" :disabled="isThreadsLoading" @click="isJumpOpen = false">取消</RippleButton>
+                  <RippleButton type="submit" :disabled="isThreadsLoading">{{ isThreadsLoading ? '加载中…' : '跳转' }}
+                  </RippleButton>
+                </div>
+              </form>
+            </section>
+          </div>
+        </Transition>
+      </Teleport>
   </div>
 </template>
 
@@ -1416,13 +1419,13 @@ const nextPage = async (): Promise<void> => {
 }
 
 .jump-overlay {
-  position: absolute;
+  position: fixed;
   inset: 0;
-  z-index: 30;
+  z-index: 40000;
   display: grid;
   place-items: center;
   padding: 20px;
-  /* background: rgba(0, 0, 0, 0.4); */
+  background: rgba(4, 7, 12, 0.58);
 }
 
 .jump-card {

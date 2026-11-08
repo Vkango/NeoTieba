@@ -76,20 +76,6 @@
                 </div>
             </div>
 
-            <!-- Context Menu -->
-            <div v-if="contextMenu.visible" class="context-menu"
-                :style="{ top: contextMenu.y + 'px', left: contextMenu.x + 'px' }" @click.stop>
-                <div class="menu-item" @click="copyImage">
-                    <span class="material-symbols-outlined">content_copy</span>
-                    <span>复制图片</span>
-                </div>
-                <div class="menu-divider"></div>
-                <div class="menu-item" @click="resetView">
-                    <span class="material-symbols-outlined">restart_alt</span>
-                    <span>重置视图</span>
-                </div>
-            </div>
-
             <!-- Zoom Preset Menu -->
             <div v-if="zoomMenu.visible" class="zoom-preset-menu" :style="{ bottom: '85px', left: zoomMenu.x + 'px' }"
                 @click.stop>
@@ -109,6 +95,7 @@ import { copyImageToClipboard } from '@/utils/clipboard-image';
 import { useSendToast } from '@/composables/useGlobalProvides';
 import { useSettingsStore } from '@/stores/settings';
 import { isArchiveUrl } from '@/composables/useOfflineMedia';
+import { openContextMenu, type ContextMenuItem } from '@/utils/contextMenu';
 const settings = useSettingsStore();
 import RangeSlider from './RangeSlider.vue';
 
@@ -176,13 +163,6 @@ let imageGeneration = 0;
 const proxyAttempted = ref(false);
 const fallbackAttempted = ref(false);
 
-// Context Menu State
-const contextMenu = ref({
-    visible: false,
-    x: 0,
-    y: 0
-});
-
 // Zoom Menu State
 const zoomMenu = ref({
     visible: false,
@@ -242,7 +222,6 @@ onUnmounted(() => {
 watch(() => props.visible, (newVal) => {
     if (newVal) {
         resetView();
-        contextMenu.value.visible = false;
         zoomMenu.value.visible = false;
         nextTick(() => {
             if (!props.embedded) overlayRef.value?.focus();
@@ -298,7 +277,6 @@ watch(() => props.imageSrc, () => {
     naturalHeight.value = 0;
     handleMouseUp();
     resetView();
-    contextMenu.value.visible = false;
     zoomMenu.value.visible = false;
 });
 
@@ -348,7 +326,6 @@ function handleMouseDown(e: MouseEvent) {
     isDragging.value = true;
     lastMouseX.value = e.clientX;
     lastMouseY.value = e.clientY;
-    contextMenu.value.visible = false;
     zoomMenu.value.visible = false;
 
     window.addEventListener('mousemove', handleMouseMove);
@@ -382,7 +359,6 @@ function handleMouseUp() {
 }
 
 function handleWheel(e: WheelEvent) {
-    contextMenu.value.visible = false;
     zoomMenu.value.visible = false;
 
     let zoomFactor = 0;
@@ -493,7 +469,6 @@ const copying = ref(false);
 async function copyImage() {
     if (copying.value || imageFailed.value || imageBlocked.value) return;
     copying.value = true;
-    contextMenu.value.visible = false;
     try {
         await copyImageToClipboard(resolvedImageSrc.value || props.imageSrc);
         sendToast('图片已复制到剪贴板', 2000);
@@ -506,24 +481,33 @@ async function copyImage() {
 }
 
 // Context Menu
-function handleContextMenu(e: MouseEvent) {
+async function handleContextMenu(e: MouseEvent) {
     e.preventDefault();
-
-    const menuWidth = 220;
-    const menuHeight = 130;
-    const bounds = overlayRef.value?.getBoundingClientRect();
-    let x = e.clientX - (bounds?.left ?? 0);
-    let y = e.clientY - (bounds?.top ?? 0);
-
-    if (x + menuWidth > (overlayRef.value?.clientWidth || window.innerWidth)) x -= menuWidth;
-    if (y + menuHeight > (overlayRef.value?.clientHeight || window.innerHeight)) y -= menuHeight;
-
+    e.stopPropagation();
     zoomMenu.value.visible = false;
-    contextMenu.value = {
-        visible: true,
-        x: Math.max(0, x),
-        y: Math.max(0, y)
-    };
+    const items: ContextMenuItem[] = [
+        { id: 'copy-image', label: '复制图片', icon: 'content_copy', disabled: imageFailed.value || imageBlocked.value },
+        { separator: true },
+        { id: 'zoom-in', label: '放大', icon: 'zoom_in' },
+        { id: 'zoom-out', label: '缩小', icon: 'zoom_out' },
+        { id: 'fit-window', label: '适合窗口', icon: 'fit_screen' },
+        { separator: true },
+        { id: 'rotate-left', label: '向左旋转', icon: 'rotate_left' },
+        { id: 'rotate-right', label: '向右旋转', icon: 'rotate_right' },
+    ];
+    if (!props.embedded) items.push({ separator: true }, { id: 'close-viewer', label: '关闭图片查看器', icon: 'close' });
+
+    const result = await openContextMenu({ x: e.clientX, y: e.clientY, items });
+    if (!result || !props.visible) return;
+    switch (result.id) {
+        case 'copy-image': void copyImage(); break;
+        case 'zoom-in': zoomIn(); break;
+        case 'zoom-out': zoomOut(); break;
+        case 'fit-window': resetView(); break;
+        case 'rotate-left': rotateLeft(); break;
+        case 'rotate-right': rotateRight(); break;
+        case 'close-viewer': handleClose(); break;
+    }
 }
 
 // Zoom Preset Menu
@@ -534,7 +518,6 @@ function handleZoomMenu(e: MouseEvent | KeyboardEvent) {
         visible: !zoomMenu.value.visible,
         x: Math.max(0, rect.left - (overlayRef.value?.getBoundingClientRect().left ?? 0) + rect.width / 2 - 50) // Center roughly
     };
-    contextMenu.value.visible = false;
 }
 
 function setZoom(preset: number) {
@@ -646,7 +629,6 @@ html.macos .image-viewer-overlay:not(.embedded) {
     pointer-events: auto;
 }
 
-.embedded .context-menu,
 .embedded .zoom-preset-menu {
     position: absolute;
     z-index: 3;
@@ -812,57 +794,6 @@ html.macos .image-viewer-overlay:not(.embedded) {
     flex-shrink: 0;
     background-color: rgba(var(--text-color), 0.2);
     margin: 0 2px;
-}
-
-.context-menu {
-    position: fixed;
-    background: rgb(var(--background-color));
-    border-radius: 12px;
-    padding: 8px;
-    min-width: 220px;
-    box-shadow: 0 15px 50px rgba(0, 0, 0, 0.7);
-    z-index: 20002;
-    color: rgb(var(--text-color));
-    border: 1px solid rgba(var(--text-color), 0.15);
-    animation: menu-pop 0.15s cubic-bezier(0, 0, 0.2, 1);
-}
-
-@keyframes menu-pop {
-    from {
-        opacity: 0;
-        transform: scale(0.9);
-    }
-
-    to {
-        opacity: 1;
-        transform: scale(1);
-    }
-}
-
-.context-menu .menu-item {
-    padding: 10px 14px;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    gap: 14px;
-    font-size: 14px;
-    border-radius: 8px;
-    transition: background 0.2s;
-}
-
-.context-menu .menu-item:hover {
-    background-color: rgba(var(--text-color), 0.12);
-}
-
-.context-menu .menu-item .material-symbols-outlined {
-    font-size: 20px;
-    color: rgba(var(--text-color), .7);
-}
-
-.menu-divider {
-    height: 1px;
-    background-color: rgba(var(--text-color), 0.1);
-    margin: 6px 8px;
 }
 
 .zoom-preset-menu {

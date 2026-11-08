@@ -54,6 +54,7 @@ const submit = (): void => {
 </script>
 
 <template>
+  <Teleport to="body">
   <Transition name="fade1">
     <div v-if="props.open" class="save-dialog-overlay" @click.self="close">
       <section class="save-dialog" role="dialog" aria-modal="true" :aria-label="props.title">
@@ -92,6 +93,7 @@ const submit = (): void => {
       </section>
     </div>
   </Transition>
+  </Teleport>
 </template>
 
 <style scoped>

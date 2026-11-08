@@ -1,7 +1,7 @@
 <template>
+    <Teleport to="body">
     <Transition name="modal" appear>
         <div v-if="visible" class="modal-overlay" @click="handleOverlayClick">
-            <Transition name="card" appear>
                 <div v-if="visible" class="user-card" @click.stop>
                     <RippleButton class="close-button" @click="$emit('close')">
                         <img src="/assets/close.svg" />
@@ -96,11 +96,11 @@
                         </Transition>
                     </div>
                 </div>
-            </Transition>
 
             <!-- Cookie 登录弹窗 -->
+            <Teleport to="body">
             <Transition name="modal">
-                <div v-if="showCookieDialog" class="cookie-dialog-overlay" @click="showCookieDialog = false">
+                <div v-if="showCookieDialog" class="cookie-dialog-overlay" @click.self.stop="showCookieDialog = false">
                     <div class="cookie-dialog" @click.stop>
                         <h3>Cookie 登录</h3>
                         <p class="dialog-hint">请输入 BDUSS 与 STOKEN 以进行登录, 或者直接将 Cookies 粘贴到下面的 Cookies 一栏自动分割</p>
@@ -117,11 +117,12 @@
                                 class="cookie-input" />
                         </div>
 
-                        <!-- <div class="input-group">
-                            <label>Cookies</label>
-                            <input v-model="cookieForm.cookies" type="text" placeholder="键入 Cookies (如果有则不需要填写上面两栏)"
-                                class="cookie-input" />
-                        </div> -->
+                        <div class="input-group">
+                            <label>Cookies（粘贴后自动分割）</label>
+                            <textarea v-model="cookieForm.cookies" class="cookie-input cookie-paste-input" rows="3"
+                                placeholder="粘贴完整 Cookies，自动提取 BDUSS 和 STOKEN"
+                                @input="parseCookieInput" />
+                        </div>
 
                         <div class="dialog-actions">
                             <RippleButton class="dialog-btn cancel" @click="showCookieDialog = false">
@@ -134,10 +135,12 @@
                     </div>
                 </div>
             </Transition>
+            </Teleport>
 
             <!-- 确认删除弹窗 -->
+            <Teleport to="body">
             <Transition name="modal">
-                <div v-if="deleteConfirmUser" class="cookie-dialog-overlay" @click="deleteConfirmUser = null">
+                <div v-if="deleteConfirmUser" class="cookie-dialog-overlay" @click.self.stop="deleteConfirmUser = null">
                     <div class="cookie-dialog" @click.stop>
                         <h3>确认删除</h3>
                         <p class="dialog-hint">确定要删除账号 "{{ deleteConfirmUser?.user_name }}" 吗？</p>
@@ -153,6 +156,7 @@
                     </div>
                 </div>
             </Transition>
+            </Teleport>
         </div>
     </Transition>
 
@@ -169,6 +173,7 @@
             </RippleButton>
         </div>
     </Transition>
+    </Teleport>
 </template>
 
 <script setup lang="ts">
@@ -181,6 +186,7 @@ import { listen } from '@tauri-apps/api/event';
 import Tip from '@/components/notification/Tip.vue';
 
 const sendNotification = inject<any>('sendNotification');
+const sendToast = inject<(title: string, duration?: number) => void>('sendToast');
 
 const props = withDefaults(defineProps<{
     visible?: boolean
@@ -200,6 +206,14 @@ const cookieForm = ref({
     stoken: '',
     cookies: ''
 });
+
+const parseCookieInput = (): void => {
+    const source = cookieForm.value.cookies;
+    const bduss = source.match(/(?:^|[;\s])BDUSS\s*=\s*([^;\s]+)/i)?.[1];
+    const stoken = source.match(/(?:^|[;\s])STOKEN\s*=\s*([^;\s]+)/i)?.[1];
+    if (bduss) cookieForm.value.bduss = bduss.replace(/^['"]|['"]$/g, '');
+    if (stoken) cookieForm.value.stoken = stoken.replace(/^['"]|['"]$/g, '');
+};
 
 const isPrivacyMode = computed(() => {
     return user_list.value.every(u => !u.current);
@@ -306,16 +320,7 @@ const deleteUser = async () => {
 
 const cookieLogin = async () => {
     if (!cookieForm.value.bduss || !cookieForm.value.stoken) {
-        if (sendNotification) {
-            await sendNotification(
-                '请输入完整的 BDUSS 和 STOKEN',
-                '<span class="material-symbols-outlined" style="font-size: 17px;">person</span>用户登录',
-                Tip,
-                null,
-                {},
-                3000
-            );
-        }
+        sendToast?.('请输入完整的 BDUSS 和 STOKEN', 3000);
         return;
     }
 
@@ -544,7 +549,7 @@ onBeforeUnmount(() => {
     display: flex;
     justify-content: center;
     align-items: center;
-    z-index: 1000;
+    z-index: 40000;
 }
 
 .user-card {
@@ -838,7 +843,7 @@ onBeforeUnmount(() => {
     display: flex;
     justify-content: center;
     align-items: center;
-    z-index: 1001;
+    z-index: 40001;
 }
 
 .cookie-dialog {
@@ -891,6 +896,13 @@ onBeforeUnmount(() => {
     outline: none;
     border-color: rgb(36, 200, 219);
     background-color: rgba(36, 200, 219, 0.05);
+}
+
+.cookie-paste-input {
+    box-sizing: border-box;
+    min-height: 76px;
+    resize: vertical;
+    font: inherit;
 }
 
 .dialog-actions {
@@ -963,24 +975,6 @@ onBeforeUnmount(() => {
 .modal-enter-from,
 .modal-leave-to {
     opacity: 0;
-}
-
-.card-enter-active {
-    transition: all 0.3s ease;
-}
-
-.card-leave-active {
-    transition: all 0.2s ease;
-}
-
-.card-enter-from {
-    opacity: 0;
-    transform: scale(0.9) translateX(20px);
-}
-
-.card-leave-to {
-    opacity: 0;
-    transform: scale(0.95);
 }
 
 .slide-left-enter-active,

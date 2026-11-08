@@ -622,3 +622,202 @@ html.macos .tabs {
 .voice-audio[data-voice-state="loading"] {
     opacity: 0.5;
 }
+
+/* 应用内对话框统一采用 dropin 的半透明磨砂面板与轻量描边。 */
+.hotkey-overlay,
+.external-link-overlay,
+.save-dialog-overlay,
+.jump-overlay,
+.cookie-dialog-overlay,
+.modal-overlay {
+    z-index: 40000 !important;
+    background: rgba(4, 7, 12, 0.58) !important;
+}
+
+.cookie-dialog-overlay {
+    z-index: 40001 !important;
+}
+
+/* 通知与 Toast 必须显示在所有模态遮罩和对话框之上。 */
+.notification-container,
+.notification-box,
+.notification-box-container,
+.toast {
+    z-index: 50000 !important;
+}
+
+.ctx-panel {
+    z-index: 60000 !important;
+}
+
+.hotkey-dialog,
+.external-link-dialog,
+.save-dialog,
+.cookie-dialog,
+.user-card,
+.jump-card {
+    color: rgb(var(--text-color));
+    background: color-mix(in srgb, rgba(var(--primary-color), 0.5) 25%, rgba(var(--background-color), 0.76) 75%) !important;
+    border: 1px solid rgba(var(--text-color), 0.14) !important;
+    border-radius: 15px !important;
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    box-shadow: 0 28px 72px rgba(0, 0, 0, 0.28), 0 2px 10px rgba(0, 0, 0, 0.12) !important;
+}
+
+.hotkey-dialog,
+.external-link-dialog,
+.save-dialog,
+.cookie-dialog,
+.jump-card {
+    padding: 22px;
+}
+
+.external-link-confirm,
+.external-link-cancel,
+.save-buttons button,
+.dialog-btn,
+.jump-buttons button {
+    min-height: 38px;
+    padding: 0 14px;
+    border: 1px solid rgba(var(--text-color), 0.1);
+    border-radius: 12px;
+    color: rgb(var(--text-color));
+    background: rgba(var(--text-color), 0.08);
+    box-shadow: none;
+}
+
+.external-link-confirm,
+.dialog-btn.confirm,
+.save-buttons button[type="submit"],
+.jump-buttons button[type="submit"] {
+    color: rgb(var(--text-color));
+    background: rgba(var(--primary-color), 0.22);
+    border-color: rgba(var(--primary-color), 0.24);
+}
+
+.dialog-btn.danger,
+.jump-buttons button.danger {
+    color: #f44336;
+    background: rgba(244, 67, 54, 0.12);
+    border-color: rgba(244, 67, 54, 0.16);
+}
+
+.external-link-url,
+.save-dialog input[type="text"],
+.save-advanced-grid input,
+.jump-card input,
+.cookie-input {
+    border: 1px solid rgba(var(--text-color), 0.16) !important;
+    border-radius: 12px !important;
+    background: rgba(var(--text-color), 0.06) !important;
+    color: rgb(var(--text-color)) !important;
+}
+
+.save-dialog input[type="text"]:focus,
+.save-advanced-grid input:focus,
+.jump-card input:focus,
+.cookie-input:focus {
+    border-color: rgba(var(--primary-color), 0.62) !important;
+    box-shadow: 0 0 0 4px rgba(var(--primary-color), 0.12);
+}
+
+.login-finish-bar {
+    background: rgba(var(--background-color), 0.72) !important;
+    border: 1px solid rgba(var(--text-color), 0.14);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+}
+
+/* 遮罩淡入淡出，面板按 dropin 的弹簧曲线缩放、上浮并柔化。 */
+.hotkey-help-enter-active,
+.hotkey-help-leave-active,
+.external-link-enter-active,
+.external-link-leave-active,
+.fade1-enter-active,
+.fade1-leave-active,
+.fade-enter-active,
+.fade-leave-active,
+.modal-enter-active,
+.modal-leave-active {
+    transition: opacity 220ms ease;
+}
+
+.hotkey-help-enter-active .hotkey-dialog,
+.hotkey-help-leave-active .hotkey-dialog,
+.external-link-enter-active .external-link-dialog,
+.external-link-leave-active .external-link-dialog,
+.fade1-enter-active .save-dialog,
+.fade1-leave-active .save-dialog,
+.fade-enter-active .jump-card,
+.fade-leave-active .jump-card,
+.modal-enter-active .cookie-dialog,
+.modal-leave-active .cookie-dialog,
+.modal-enter-active .user-card,
+.modal-leave-active .user-card {
+    transition: opacity 240ms cubic-bezier(0.2, 0.8, 0.2, 1),
+        transform 460ms cubic-bezier(0.22, 1, 0.36, 1),
+        filter 240ms ease;
+    will-change: transform, opacity, filter;
+}
+
+.hotkey-help-enter-from .hotkey-dialog,
+.external-link-enter-from .external-link-dialog,
+.fade1-enter-from .save-dialog,
+.fade-enter-from .jump-card,
+.modal-enter-from .cookie-dialog,
+.modal-enter-from .user-card,
+.hotkey-help-leave-to .hotkey-dialog,
+.external-link-leave-to .external-link-dialog,
+.fade1-leave-to .save-dialog,
+.fade-leave-to .jump-card,
+.modal-leave-to .cookie-dialog,
+.modal-leave-to .user-card {
+    opacity: 0;
+    transform: translateY(18px) scale(0.94);
+    filter: blur(10px);
+}
+
+.hotkey-help-enter-to .hotkey-dialog,
+.external-link-enter-to .external-link-dialog,
+.fade1-enter-to .save-dialog,
+.fade-enter-to .jump-card,
+.modal-enter-to .cookie-dialog,
+.modal-enter-to .user-card,
+.hotkey-help-leave-from .hotkey-dialog,
+.external-link-leave-from .external-link-dialog,
+.fade1-leave-from .save-dialog,
+.fade-leave-from .jump-card,
+.modal-leave-from .cookie-dialog,
+.modal-leave-from .user-card {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: blur(0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .hotkey-help-enter-active,
+    .hotkey-help-leave-active,
+    .external-link-enter-active,
+    .external-link-leave-active,
+    .fade1-enter-active,
+    .fade1-leave-active,
+    .fade-enter-active,
+    .fade-leave-active,
+    .modal-enter-active,
+    .modal-leave-active,
+    .hotkey-help-enter-active .hotkey-dialog,
+    .hotkey-help-leave-active .hotkey-dialog,
+    .external-link-enter-active .external-link-dialog,
+    .external-link-leave-active .external-link-dialog,
+    .fade1-enter-active .save-dialog,
+    .fade1-leave-active .save-dialog,
+    .fade-enter-active .jump-card,
+    .fade-leave-active .jump-card,
+    .modal-enter-active .cookie-dialog,
+    .modal-leave-active .cookie-dialog,
+    .modal-enter-active .user-card,
+    .modal-leave-active .user-card {
+        transition-duration: 1ms;
+    }
+}
