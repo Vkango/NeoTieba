@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch, type CSSProperties } from 'vue';
+import { computed, defineAsyncComponent, inject, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch, type CSSProperties } from 'vue';
 import { useSettingsStore } from '@/stores/settings';
 import { processContentElements } from '@/utils/helper';
 import { hydrateVoiceAudios } from '@/utils/amr-voice';
@@ -10,17 +10,21 @@ import { ReaderPaginator, readerGeometry, compareReaderCursor } from '@/utils/re
 import ThreadReaderSheet from './ThreadReaderSheet.vue';
 import RangeSlider from '@/components/common/RangeSlider.vue';
 import type { ContentElement } from '@/types/common';
+const ThreadReaderReplies = defineAsyncComponent(() => import('./ThreadReaderReplies.vue'));
 
 interface ReadingPost {
   id: string | number;
   author_id: string | number;
   floor?: number;
   content?: ContentElement[];
-  author?: { name_show?: string; name?: string; user_name?: string };
+  sub_post_number?: number | string;
+  author?: { name_show?: string; name?: string; user_name?: string; portrait?: string };
 }
 const props = defineProps<{
   posts: ReadingPost[]; title: string; initialPostId: string; loading: boolean; hasMore: boolean; error: string;
   onlyAuthor?: boolean;
+  tid?: string;
+  local?: boolean;
 }>();
 const emit = defineEmits<{
   (event: 'position', id: string): void;
@@ -42,6 +46,9 @@ const outlineButton = ref<HTMLButtonElement>();
 const sizeOpen = ref(false);
 const sizePanel = ref<HTMLElement>();
 const sizeButton = ref<HTMLButtonElement>();
+const replyPostId = ref('');
+const replyPost = computed(() => props.posts.find(post => String(post.id) === replyPostId.value));
+let replyTrigger: HTMLElement | undefined;
 const fontSize = ref<number>();
 const fontWeight = ref(400);
 const imageSize = ref(100);
@@ -122,9 +129,10 @@ function source(index: number): ReaderSource {
     if (size) { media.setAttribute('width', String(size.width)); media.setAttribute('height', String(size.height)); }
     media.setAttribute('preload', 'none');
   }
-  const parsed = new ReaderSource(template.innerHTML);
+  const replies = { postId: String(post.id), count: Number(post.sub_post_number || 0) };
+  const parsed = new ReaderSource(template.innerHTML, replies);
   const meaningful = template.content.textContent?.trim() || template.content.querySelector('img, video, audio, hr');
-  const result = parsed.length && meaningful ? parsed : new ReaderSource('[该楼层暂无正文]');
+  const result = parsed.length && meaningful ? parsed : new ReaderSource('[该楼层暂无正文]', replies);
   sources.set(index, result);
   sourceUnits += result.length;
   while (sources.size > 64 || (sourceUnits > 65536 && sources.size > 1)) {
@@ -312,6 +320,7 @@ function onWheel(event: WheelEvent) {
   wheelAt = now; step(event.deltaY > 0 ? 1 : -1);
 }
 function onKey(event: KeyboardEvent) {
+  if (replyPostId.value) return;
   if (sizeOpen.value && event.key === 'Escape') {
     event.preventDefault(); event.stopPropagation(); closeSize(); return;
   }
@@ -387,9 +396,24 @@ function onPointer(event: PointerEvent) {
 function onClick(event: MouseEvent) {
   const target = event.target;
   if (!(target instanceof Element)) return;
+  const replies = target.closest<HTMLElement>('.reader-replies');
+  if (replies && props.tid) {
+    replyTrigger = replies;
+    replyPostId.value = replies.dataset.postId || '';
+    sizeOpen.value = false;
+    return;
+  }
   const at = target.closest('.at-button');
   if (at) { const id = at.getAttribute('uid'); if (id) emit('openUser', id); }
   if (target instanceof HTMLImageElement && target.classList.contains('thread-reply-img')) openImageViewer?.(offlineMedia(target.dataset.fullSrc || target.src));
+}
+function closeReplies() {
+  replyPostId.value = '';
+  void nextTick(() => {
+    if (replyTrigger?.isConnected) replyTrigger.focus({ preventScroll: true });
+    else root.value?.focus({ preventScroll: true });
+    replyTrigger = undefined;
+  });
 }
 function onMediaLoad(event: Event) {
   const target = event.target;
@@ -467,7 +491,7 @@ defineExpose({ navigateToFloor, focus: () => root.value?.focus({ preventScroll: 
   <section ref="root" class="thread-reader" :class="{ 'controls-visible': nearBottom || sizeOpen }" tabindex="0" aria-label="看文模式"
     @pointermove="onPointer" @pointerleave="nearBottom = false" @pointerdown="onRootPointerDown" @keydown="onKey">
     <div ref="viewport" class="reader-viewport" :style="{ bottom: controlsSpace + 'px' }"
-      :inert="outlineOpen || undefined" @scroll="onScroll" @wheel="onWheel" @click="onClick" @load.capture="onMediaLoad"
+      :inert="outlineOpen || Boolean(replyPostId) || undefined" @scroll="onScroll" @wheel="onWheel" @click="onClick" @load.capture="onMediaLoad"
       @loadedmetadata.capture="onMediaLoad" @error.capture="mediaError">
       <div class="reader-track" :style="{ width: `${3 * width}px` }">
         <div v-for="screen in mountedScreens" :key="screen.index" class="reader-screen"
@@ -480,7 +504,7 @@ defineExpose({ navigateToFloor, focus: () => root.value?.focus({ preventScroll: 
     </div>
     <p v-if="!posts.length" class="reader-empty">暂无正文</p>
     <div class="reader-controls-shell">
-      <nav ref="controls" class="reader-controls" aria-label="阅读控制" :inert="outlineOpen || undefined">
+      <nav ref="controls" class="reader-controls" aria-label="阅读控制" :inert="outlineOpen || Boolean(replyPostId) || undefined">
         <button type="button" :disabled="atStart" :aria-disabled="busy || atStart" title="上一屏" aria-label="上一屏"
           @click="step(-1)"><span class="material-symbols-outlined">chevron_left</span></button>
         <button type="button" :disabled="atEnd && !hasMore" :aria-disabled="busy || (atEnd && (!hasMore || loading))"
@@ -513,6 +537,10 @@ defineExpose({ navigateToFloor, focus: () => root.value?.focus({ preventScroll: 
       <div class="reader-size-row"><div><span>图片大小</span><output>{{ imageSize }}%</output></div>
         <RangeSlider v-model="imageSize" :min="50" :max="250" :step="10" aria-label="图片大小" /></div>
     </section>
+    <ThreadReaderReplies v-if="replyPost && tid" :key="replyPostId" :tid="tid" :pid="replyPost.id"
+      :floor="replyPost.floor" :count="Number(replyPost.sub_post_number || 0)" :local="local"
+      :author-id="replyPost.author_id" :author-name="replyPost.author?.name_show || replyPost.author?.name || replyPost.author?.user_name || '匿名用户'"
+      :author-avatar="replyPost.author?.portrait || ''" @close="closeReplies" @open-user="emit('openUser', $event)" />
     <Transition name="reader-drawer">
       <div v-if="outlineOpen" class="reader-outline-overlay" :inert="!outlineOpen || undefined"
         @click.self="closeOutline">

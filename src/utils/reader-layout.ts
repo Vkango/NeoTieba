@@ -76,6 +76,7 @@ export class ReaderPaginator {
     const index = tokens.findIndex(token => token.kind !== 'break' && (token.kind !== 'text' || token.text?.trim()));
     const first = tokens[index];
     if (!first) return g.lineHeight;
+    if (first.kind === 'replies') return 32;
     if (first.kind === 'image') return Math.min(this.imageRow(tokens, index, g, height).height * .78, height - 32);
     if (first.kind !== 'text' && first.kind !== 'emoticon') return Math.min(this.mediaBox(first, g, height).height * .78, height - 32);
     let end = index;
@@ -186,6 +187,13 @@ export class ReaderPaginator {
           gap = Math.min(g.lineHeight, gap + g.paragraphGap);
           i++; continue;
         }
+        if (token.kind === 'replies') {
+          gap = Math.max(gap, 8);
+          if (!room(32)) break page;
+          add(postIndex, token.from, token.to, `<div class="reader-reply-row" data-column="${column}" style="left:${x()}px;top:${y}px;width:${g.columnWidth}px;height:32px">${data.html(token.from, token.to)}</div>`);
+          y += 32; bottoms[column] = y; gap = g.floorGap;
+          i++; continue;
+        }
         if (token.kind !== 'text' && token.kind !== 'emoticon') {
           const row = token.kind === 'image' ? this.imageRow(tokens, i, g, bottom - g.top) : undefined;
           const box = row || this.mediaBox(token, g, bottom - g.top);
@@ -245,6 +253,7 @@ export class ReaderPaginator {
           }
           // Avoid a one-line paragraph orphan or widow, without keeping whole paragraphs together.
           const finalTwo = naturalEnd && next && !layoutNextRichInlineLineRange(paragraph.prepared, g.columnWidth, next.end);
+          if (!next && boundary?.kind === 'replies' && !room(g.lineHeight + 40)) break page;
           if (next && (currentOffset === runs[0].from || finalTwo) && !room(g.lineHeight * 2)) break page;
           if (!room(g.lineHeight)) break page;
           let end = currentOffset;

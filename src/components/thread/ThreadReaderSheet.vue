@@ -45,5 +45,9 @@ defineExpose({ getElement: () => root.value });
 /* Ordinary reply grids use square thumbnails. Reader media must fit the paginator's aspect-ratio box. */
 .reader-post :deep(.reader-media img), .reader-post :deep(.reader-media video) { display: block; box-sizing: border-box; min-width: 0; min-height: 0; aspect-ratio: auto; width: 100% !important; height: 100% !important; max-width: 100% !important; max-height: 100% !important; object-fit: contain; border-radius: 5px; cursor: pointer; }
 .reader-post :deep(.reader-media audio) { width: 100%; max-width: 100%; height: 54px; }
+.reader-post :deep(.reader-reply-row) { position: absolute; display: flex; align-items: center; }
+.reader-post :deep(.reader-replies) { display: inline-flex; align-items: center; height: 32px; max-width: 100%; margin: 0; padding: 4px 10px; border: 1px solid rgba(var(--text-color), .12); border-radius: 8px; box-shadow: none; background: rgba(var(--text-color), .04); color: rgba(var(--text-color), .65); font-size: 13px; font-weight: 500; line-height: 20px; font-family: inherit; cursor: pointer; }
+.reader-post :deep(.reader-replies:hover) { color: rgb(var(--primary-color)); background: rgba(var(--primary-color), .1); }
+.reader-post :deep(.reader-replies:focus-visible) { outline: 2px solid rgb(var(--primary-color)); outline-offset: 2px; }
 .reader-author-heading button:focus-visible { outline: 2px solid rgb(var(--primary-color)); outline-offset: 2px; }
 </style>

@@ -1,5 +1,6 @@
 /** Inert, lazily-created source for one floor. Only small ranges enter the live document. */
 const ATOMIC = new Set(['IMG', 'VIDEO', 'AUDIO', 'BR', 'HR']);
+const atomic = (element: Element) => ATOMIC.has(element.tagName) || (element.tagName === 'BUTTON' && element.classList.contains('reader-replies'));
 export function readerFontWeight(weight: number, base = 400): number {
   return Math.max(100, Math.min(900, base + weight - 400));
 }
@@ -26,7 +27,7 @@ export interface ReaderPage {
 }
 export interface ReaderToken {
   from: number; to: number;
-  kind: 'text' | 'break' | 'emoticon' | 'image' | 'video' | 'audio' | 'rule';
+  kind: 'text' | 'break' | 'emoticon' | 'image' | 'video' | 'audio' | 'rule' | 'replies';
   text?: string; weight?: number; italic?: boolean; key?: string;
   width?: number; height?: number;
 }
@@ -42,7 +43,7 @@ function leaves(root: Node): Leaf[] {
     if (node.nodeType === Node.TEXT_NODE) {
       const length = node.textContent?.length ?? 0;
       if (length) { result.push({ node, start: offset, end: offset + length }); offset += length; }
-    } else if (node instanceof Element && ATOMIC.has(node.tagName)) {
+    } else if (node instanceof Element && atomic(node)) {
       result.push({ node, start: offset, end: ++offset });
     } else for (const child of node.childNodes) visit(child);
   }
@@ -55,12 +56,19 @@ export class ReaderSource {
   private leaves: Leaf[];
   private graphemes = new WeakMap<Node, number[]>();
   readonly length: number;
-  constructor(html: string) {
+  constructor(html: string, replies?: { postId: string; count: number }) {
     // template content is inert: parsing an unread floor cannot fetch its media.
     this.template.innerHTML = html;
+    if (replies && Number.isFinite(replies.count) && replies.count > 0) {
+      const button = this.template.content.ownerDocument.createElement('button');
+      button.type = 'button'; button.className = 'reader-replies';
+      button.dataset.postId = replies.postId;
+      button.textContent = `${Math.floor(replies.count)} 条回复`;
+      this.template.content.appendChild(button);
+    }
     // Keep rich inline emphasis, but let the reader own the font metrics used for pagination.
     for (const element of this.template.content.querySelectorAll<HTMLElement>('*')) {
-      if (ATOMIC.has(element.tagName)) continue;
+      if (atomic(element)) continue;
       for (const name of ['font-size', 'font-family', 'line-height', 'letter-spacing']) element.style.removeProperty(name);
       if (element.tagName === 'FONT') { element.removeAttribute('size'); element.removeAttribute('face'); }
     }
@@ -133,7 +141,7 @@ export class ReaderSource {
       const node = leaf.node;
       if (node instanceof Element) {
         const kind = node.tagName === 'IMG' ? node.classList.contains('emoticon') ? 'emoticon' : 'image'
-          : node.tagName === 'VIDEO' ? 'video' : node.tagName === 'AUDIO' ? 'audio' : node.tagName === 'HR' ? 'rule' : 'break';
+          : node.tagName === 'VIDEO' ? 'video' : node.tagName === 'AUDIO' ? 'audio' : node.tagName === 'HR' ? 'rule' : node.tagName === 'BUTTON' ? 'replies' : 'break';
         result.push({ from: start, to: end, kind,
           key: node.getAttribute('data-full-src') || node.getAttribute('data-remote-src') || node.getAttribute('src') || '',
           width: Number(node.getAttribute('width')) || undefined, height: Number(node.getAttribute('height')) || undefined });

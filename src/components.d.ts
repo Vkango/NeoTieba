@@ -49,6 +49,7 @@ declare module 'vue' {
     ThreadFloorIndex: typeof import('./components/thread/ThreadFloorIndex.vue')['default']
     ThreadLite: typeof import('./components/thread/ThreadLite.vue')['default']
     ThreadReader: typeof import('./components/thread/ThreadReader.vue')['default']
+    ThreadReaderReplies: typeof import('./components/thread/ThreadReaderReplies.vue')['default']
     ThreadReaderSheet: typeof import('./components/thread/ThreadReaderSheet.vue')['default']
     ThreadSaveDialog: typeof import('./components/common/ThreadSaveDialog.vue')['default']
     Tip: typeof import('./components/notification/Tip.vue')['default']

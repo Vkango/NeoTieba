@@ -785,6 +785,7 @@ const nextPage = async (): Promise<void> => {
     :class="{ compact: props.compact || galleryOpen, 'gallery-open': galleryOpen, 'context-collapsed': contextCollapsed, resizing, stacked: isStacked }"
     :style="{ '--context-width': contextWidth + 'px', '--context-height': contextHeight + 'px' }" @keydown.esc="isJumpOpen = false">
     <ThreadReader v-if="readerOpen" ref="readerRef" :posts="visibleThreadList" :title="threadTitle"
+      :tid="String(tid)" :local="props.local"
       :initial-post-id="readerInitialPostId" :loading="isThreadsLoading"
       :has-more="Boolean(returnData.data?.page?.has_more)" :error="loadError" :only-author="onlyThreadAuthor"
       @position="onReaderPosition" @load-more="nextPage" @close="toggleReader" @open-user="onUserNameClicked"

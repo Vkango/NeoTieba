@@ -64,6 +64,7 @@ try {
     const { createPinia } = await import(`/node_modules/.vite/deps/pinia.js?v=${hash}`);
     const { default: Reader } = await import('/src/components/thread/ThreadReader.vue');
     const { default: FloorIndex } = await import('/src/components/thread/ThreadFloorIndex.vue');
+    const { useApiStore } = await import('/src/stores/api.ts');
     await import('/src/styles/global.css');
     await import('/node_modules/@fontsource/material-symbols-outlined/400.css');
     const reads = new Set();
@@ -77,7 +78,7 @@ try {
     const reader = vue.ref();
     const positions = [];
     const app = vue.createApp({ render: () => vue.h(Reader, { ...state, title: state.title || '按需排版性能验证',
-      initialPostId: '1', ref: reader, onPosition: id => positions.push(id),
+      initialPostId: '1', tid: 'fixture-thread', ref: reader, onPosition: id => positions.push(id),
       onJump: () => { window.fixture.jumps++; }, onOnlyAuthor: () => { state.onlyAuthor = !state.onlyAuthor; },
       onLoadMore: () => { window.fixture.loads++; window.fixture.handler?.(); } }, {
         outline: ({ close }) => vue.h(FloorIndex, { panel: true,
@@ -89,9 +90,23 @@ try {
           onNavigate: id => { reader.value.navigateToFloor(id); close(); },
         }),
       }) });
-    app.use(createPinia());
+    const pinia = createPinia();
+    app.use(pinia);
+    const replyCalls = [];
+    useApiStore(pinia).getApi().viewSubPost = async (tid, pid, page) => {
+      replyCalls.push({ tid, pid: String(pid), page });
+      await new Promise(resolve => setTimeout(resolve, 40));
+      if (String(pid) === '96003' && replyCalls.filter(call => call.pid === '96003').length === 1) throw Error('fixture reply failure');
+      const total = String(pid) === '96003' ? 3 : 11;
+      const start = (page - 1) * 6;
+      return { page: { current_page: page, total_page: Math.ceil(total / 6) }, subpost_list:
+        Array.from({ length: Math.min(6, total - start) }, (_, i) => ({ id: start + i + 1,
+          author: { id: i + 10, name: 'Reply user ' + (start + i + 1), portrait: '' },
+          content: [{ type: 0, text: ('这是第 ' + (start + i + 1) + ' 条楼中楼回复，检查回复列表分页和阅读位置。').repeat(12) }],
+        })) };
+    };
     app.mount('#fixture');
-    window.fixture = { state, reader, reads, positions, loads: 0, outlineLoads: 0, jumps: 0, accesses: () => accesses };
+    window.fixture = { state, reader, reads, positions, replyCalls, loads: 0, outlineLoads: 0, jumps: 0, accesses: () => accesses };
   }, browserHash);
   const idle = async () => {
     await page.waitForFunction(() => document.querySelector('.reader-screen:not([inert]) .reader-paper') && !document.querySelector('.reader-measure')
@@ -608,6 +623,62 @@ try {
   await page.keyboard.press('Escape');
   await page.setViewportSize({ width: 1200, height: 800 }); await idle();
   console.log('Passed: custom size sliders, matching font weights/measurement, image scaling, rapid updates, anchored reflow and narrow panes.');
+  await page.evaluate(() => {
+    window.fixture.state.posts = [
+      { id: 96001, author_id: 1, floor: 1, sub_post_number: 11, content: [{ type: 0, text: '第一层正文结束后才显示回复入口。' }] },
+      { id: 96002, author_id: 1, floor: 2, sub_post_number: 0, content: [{ type: 0, text: '同一作者，没有回复的楼层不显示入口。' }] },
+      { id: 96003, author_id: 2, floor: 3, sub_post_number: 3, content: [{ type: 0, text: '另一位作者的回复列表，测试失败后重试。' }] },
+    ];
+  });
+  await idle(); await delay(120);
+  assert.equal(await page.locator('.reader-screen:not([inert]) .reader-replies').count(), 2);
+  assert.deepEqual(await page.evaluate(() => window.fixture.replyCalls), [], 'reply lists must never mount or fetch until clicked');
+  const replyAnchor = (await snapshot()).parts.map(({ id, from, to }) => ({ id, from, to }));
+  await page.getByRole('button', { name: '11 条回复', exact: true }).click();
+  const replyDialog = page.getByRole('dialog', { name: '第 1 楼的回复', exact: true });
+  await replyDialog.waitFor();
+  await page.waitForFunction(() => document.querySelectorAll('.reader-replies-panel .subpost-1').length === 6);
+  assert.equal(await page.evaluate(() => window.fixture.replyCalls.length), 1, 'opening one floor must load only that floor');
+  assert.equal(await replyDialog.locator('.subpost-1').count(), 6, 'expanded lists must include replies beyond the first five');
+  await replyDialog.locator('.reader-replies-content').evaluate(e => { e.scrollTop = e.scrollHeight; });
+  await page.waitForFunction(() => document.querySelectorAll('.reader-replies-panel .subpost-1').length === 11);
+  assert.deepEqual(await page.evaluate(() => window.fixture.replyCalls), [
+    { tid: 'fixture-thread', pid: '96001', page: 1 }, { tid: 'fixture-thread', pid: '96001', page: 2 },
+  ]);
+  await page.keyboard.press('ArrowRight');
+  assert.deepEqual((await snapshot()).parts.map(({ id, from, to }) => ({ id, from, to })), replyAnchor, 'reply interactions must not flip reading pages');
+  await page.keyboard.press('Escape'); await replyDialog.waitFor({ state: 'detached' });
+  assert.ok(await page.evaluate(() => document.activeElement.classList.contains('reader-replies')), 'closing restores focus to the floor reply button');
+  await page.getByRole('button', { name: '3 条回复', exact: true }).click();
+  const failureDialog = page.getByRole('dialog', { name: '第 3 楼的回复', exact: true });
+  await failureDialog.getByRole('button', { name: '加载回复失败，重试', exact: true }).waitFor();
+  await delay(160);
+  assert.equal(await page.evaluate(() => window.fixture.replyCalls.filter(call => call.pid === '96003').length), 1,
+    'a failed reply request must not loop automatically');
+  await failureDialog.getByRole('button', { name: '加载回复失败，重试', exact: true }).click();
+  await page.waitForFunction(() => document.querySelectorAll('.reader-replies-panel .subpost-1').length === 3);
+  await page.getByRole('button', { name: '关闭回复列表', exact: true }).click();
+  await failureDialog.waitFor({ state: 'detached' });
+  assert.deepEqual((await snapshot()).parts.map(({ id, from, to }) => ({ id, from, to })), replyAnchor);
+  await page.evaluate(async () => {
+    const { ReaderSource } = await import('/src/utils/reader-source.ts');
+    const { ReaderPaginator, readerGeometry } = await import('/src/utils/reader-layout.ts');
+    const source = new ReaderSource('长楼层的正文应当跨屏后再展示回复按钮。'.repeat(200), { postId: 'long-floor', count: 8 });
+    const paginator = new ReaderPaginator(() => [{ id: 'long-floor', author_id: 1, floor: 1 }], () => source, () => undefined);
+    const geometry = readerGeometry(600, 500, 'sans-serif');
+    let cursor = { post: 0, offset: 0 }; let buttons = 0; let screens = 0;
+    while (cursor.post === 0 && screens++ < 30) {
+      const page = paginator.page(cursor, geometry, '');
+      const count = page.parts.reduce((n, part) => n + (part.html.match(/class="reader-replies"/g) || []).length, 0);
+      if (count && page.end.post !== 1) throw Error('reply button appeared before the floor ended');
+      const recovered = paginator.page(page.start, geometry, '', page.end);
+      if (recovered.parts.map(p => p.html).join('') !== page.parts.map(p => p.html).join('')) throw Error('reply checkpoint changed');
+      if (page.end.offset === cursor.offset && page.end.post === cursor.post) throw Error('reply boundary stalled pagination');
+      buttons += count; cursor = page.end;
+    }
+    if (buttons !== 1 || screens < 2 || cursor.post !== 1) throw Error('long-floor reply button was missing or duplicated');
+  });
+  console.log('Passed: per-floor reply buttons, lazy reply lists, pagination, more than five replies, failure/retry, close/focus and long-floor boundaries.');
   assert.deepEqual(errors, []);
   const motion = await page.evaluate(() => { window.readerMotion.running = false; return window.readerMotion.shifts; });
   assert.deepEqual(motion, [], 'pagination and rebuilding must not expose horizontal jumps between frames');

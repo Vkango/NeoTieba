@@ -19,6 +19,7 @@
       </div>
     </div>
     <div ref="bottomRef" class="load-sentinel" aria-hidden="true"></div>
+    <button v-if="loadError" type="button" class="subpost-retry" :disabled="isLoading" @click="retryLoad">加载回复失败，重试</button>
   </div>
   <Teleport to="body">
     <transition name="fade1">
@@ -102,7 +103,9 @@ const subpost_list: Ref<SubPostItem[]> = ref<SubPostItem[]>([]);
 const isLoading: Ref<boolean> = ref<boolean>(false);
 const bottomRef = ref<HTMLElement | null>(null);
 // 多余条目的 DOM 只在展开期间存在：收起动画结束后即卸载，不为未展开的楼中楼保留内存
-const renderExtras = ref(false);
+const renderExtras = ref(Boolean(props.expanded));
+const loadError = ref(false);
+let disposed = false;
 const opening = ref(false);
 let currentPage = 0;
 let totalPages = 1;
@@ -383,18 +386,22 @@ const placeLoadingPill = (): void => {
 watch(isLoading, (loading) => { if (loading) placeLoadingPill(); });
 
 const loadNext = async (): Promise<void> => {
-  if (isLoading.value) return;
+  if (disposed || isLoading.value) return;
   isLoading.value = true;
+  loadError.value = false;
   try {
     const next = currentPage + 1;
     const res = await fetchPage(next);
+    if (disposed) return;
     const items: SubPostItem[] = res.subpost_list || [];
     subpost_list.value = next === 1 ? items : [...subpost_list.value, ...items];
     currentPage = next;
     const totalPage = Number(res.page?.total_page || res.page?.current_page || 1);
     if (Number.isInteger(totalPage) && totalPage > 0) totalPages = totalPage;
+    if (!items.length) totalPages = currentPage;
     registerImages(items);
   } catch (error) {
+    loadError.value = true;
     console.error('加载楼中楼失败:', error);
   } finally {
     isLoading.value = false;
@@ -402,13 +409,18 @@ const loadNext = async (): Promise<void> => {
 };
 
 const tryLoadMore = async (): Promise<void> => {
-  if (!props.expanded || isLoading.value || currentPage >= totalPages) return;
+  if (disposed || loadError.value || !props.expanded || isLoading.value || currentPage >= totalPages) return;
   if (!isSentinelNearViewport()) return;
   await loadNext();
   // 追加后哨兵可能仍停留在可视区域内，继续补加载直到填满一屏或没有更多
   await nextTick();
   await tryLoadMore();
 };
+async function retryLoad() {
+  await loadNext();
+  await nextTick();
+  await tryLoadMore();
+}
 
 onMounted(() => {
   const root = bottomRef.value?.closest('.component-container') as HTMLElement | null;
@@ -416,7 +428,7 @@ onMounted(() => {
     if (entries.some(entry => entry.isIntersecting)) void tryLoadMore();
   }, { root, rootMargin: '120px 0px' });
   if (bottomRef.value) observer.observe(bottomRef.value);
-  if (props.reply_num > 0) void loadNext();
+  if (props.reply_num > 0) void loadNext().then(async () => { await nextTick(); await tryLoadMore(); });
 });
 
 // 展开：挂载多余条目并用 keyframes 动画展开（首次插入无法触发 transition）；
@@ -451,6 +463,7 @@ onDeactivated(() => {
 });
 
 onBeforeUnmount(() => {
+  disposed = true;
   observer?.disconnect();
   observer = null;
   window.clearTimeout(showTimer);
@@ -461,6 +474,7 @@ onBeforeUnmount(() => {
 });
 </script>
 <style scoped>
+.subpost-retry { align-self: flex-start; padding: 6px 10px; border: 1px solid rgba(var(--text-color), .12); border-radius: 8px; box-shadow: none; color: inherit; background: rgba(var(--text-color), .04); cursor: pointer; }
 .subpost {
   border-radius: 8px;
   display: flex;
