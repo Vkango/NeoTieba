@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { FLOOR_INDEX_SIZE, floorWindowStart } from '@/utils/thread-index';
 
 interface Entry { id: string; floor: number; avatar: string; preview: string }
@@ -15,19 +15,30 @@ const props = defineProps<{
   favourite: boolean;
   favouriteHere: boolean;
   onlyAuthor: boolean;
+  panel?: boolean;
+  hasMore?: boolean;
+  error?: string;
 }>();
 const emit = defineEmits<{
   (event: 'navigate', id: string, edge?: 'start' | 'end'): void;
-  (event: 'jump' | 'onlyAuthor' | 'bookmark' | 'removeBookmark' | 'gallery'): void;
+  (event: 'jump' | 'onlyAuthor' | 'bookmark' | 'removeBookmark' | 'gallery' | 'reader'): void;
+  (event: 'close'): void;
+  (event: 'loadMore'): void;
 }>();
-const isOpen = ref(false);
+const isOpen = ref(Boolean(props.panel));
 const windowStart = ref(0);
 const listElement = ref<HTMLElement>();
 let closeTimer: ReturnType<typeof setTimeout> | undefined;
 let followFrame = 0;
+let requestedTail = '';
 const current = computed(() => props.entries.find(entry => entry.id === props.currentId));
+// Keep the full-height outline bounded even for very long threads.
+const panelStart = computed(() => props.panel ? Math.max(0, windowStart.value - 4) : 0);
+const visibleEntries = computed(() => props.entries.slice(panelStart.value, props.panel ? panelStart.value + 64 : undefined)
+  .map((entry, index) => ({ entry, index: panelStart.value + index })));
 
 function rowStep() {
+  if (props.panel) return 47;
   const row = listElement.value?.querySelector<HTMLElement>('.floor-entry');
   return row ? row.getBoundingClientRect().height + 3 : 43;
 }
@@ -37,6 +48,16 @@ async function syncList() {
 }
 function onListScroll() {
   if (listElement.value) windowStart.value = Math.floor(listElement.value.scrollTop / rowStep());
+  requestMore();
+}
+function requestMore(retry = false) {
+  const list = listElement.value;
+  if (!props.panel || !props.hasMore || props.busy || (!retry && props.error) || !list) return;
+  if (!retry && list.scrollHeight - list.scrollTop - list.clientHeight > 64) return;
+  const tail = `${props.entries.length}:${props.entries[props.entries.length - 1]?.id}`;
+  if (!retry && requestedTail === tail) return;
+  requestedTail = tail;
+  emit('loadMore');
 }
 
 function open() {
@@ -44,6 +65,7 @@ function open() {
   isOpen.value = true;
 }
 function close() {
+  if (props.panel) return;
   clearTimeout(closeTimer);
   closeTimer = setTimeout(() => { isOpen.value = false; followCurrent(); }, 160);
 }
@@ -53,7 +75,8 @@ async function followCurrent(animate = false) {
   if (!list) return;
   cancelAnimationFrame(followFrame);
   const target = Math.max(0, Math.min(list.scrollHeight - list.clientHeight,
-    (props.readingIndex - (FLOOR_INDEX_SIZE - 1) / 2) * rowStep()));
+    (props.panel ? props.entries.findIndex(entry => entry.id === props.currentId) * rowStep() - list.clientHeight / 2
+      : (props.readingIndex - (FLOOR_INDEX_SIZE - 1) / 2) * rowStep())));
   if (!animate || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
     list.scrollTop = target;
     return;
@@ -72,13 +95,25 @@ watch(() => props.entries.map(entry => entry.id), (ids, previous) => {
   const oldStart = previous?.[windowStart.value];
   const preserved = oldStart ? ids.indexOf(oldStart) : -1;
   windowStart.value = preserved >= 0 ? preserved : floorWindowStart(ids.length, ids.indexOf(props.currentId));
+  if (props.panel && preserved >= 0) {
+    // Appending index entries must not pull the drawer back to the reading floor.
+    const scrollTop = listElement.value?.scrollTop ?? 0;
+    void nextTick(() => {
+      if (listElement.value) listElement.value.scrollTop = scrollTop;
+    });
+    return;
+  }
+  requestedTail = '';
   void followCurrent(Boolean(previous?.length && ids.length > previous.length));
 });
 watch(() => props.readingIndex, () => { void followCurrent(); });
+watch(() => props.currentId, () => { if (props.panel) void followCurrent(); });
+onMounted(() => { if (props.panel) void followCurrent(); });
 
 function browseList() {
   cancelAnimationFrame(followFrame);
   followFrame = 0;
+  requestMore();
 }
 
 function reveal(id: string, edge?: 'start' | 'end') {
@@ -97,12 +132,14 @@ defineExpose({ reveal });
 </script>
 
 <template>
-  <nav class="floor-index" :class="{ expanded: isOpen }" aria-label="楼层索引" @mouseenter="open" @mouseleave="close"
-    @focusin="open" @focusout="onFocusOut" @keydown.esc="isOpen = false">
+  <nav class="floor-index" :class="{ expanded: isOpen, panel }" aria-label="楼层索引" @mouseenter="open" @mouseleave="close"
+    @focusin="open" @focusout="onFocusOut" @keydown.esc.stop="panel ? emit('close') : (isOpen = false)">
+    <header v-if="panel" class="outline-heading"><strong>大纲</strong><span>{{ entries.length }} 楼</span><button type="button" aria-label="关闭大纲" @click="emit('close')"><span class="material-symbols-outlined">close</span></button></header>
     <div ref="listElement" class="floor-entries"
       :style="{ '--visible-rows': Math.min(entries.length, FLOOR_INDEX_SIZE) }" @scroll="onListScroll"
       @wheel.stop="browseList" @touchmove.stop="browseList">
-      <button v-for="(entry, index) in entries" :key="entry.id" type="button" class="floor-entry"
+      <div v-if="panel" aria-hidden="true" :style="{ height: panelStart * 47 + 'px', flexShrink: 0 }"></div>
+      <button v-for="{ entry, index } in visibleEntries" :key="entry.id" type="button" class="floor-entry"
         :class="{ current: entry.id === currentId }" :aria-current="entry.id === currentId ? 'location' : undefined"
         :aria-label="'跳转到第 ' + entry.floor + ' 楼'" :disabled="busy" @click="navigate(entry, index)">
         <span class="floor-summary" :aria-hidden="!isOpen">
@@ -112,12 +149,17 @@ defineExpose({ reveal });
         </span>
         <span class="floor-tick" aria-hidden="true"></span>
       </button>
+      <div v-if="panel" aria-hidden="true" :style="{ height: Math.max(0, entries.length - panelStart - visibleEntries.length) * 47 + 'px', flexShrink: 0 }"></div>
     </div>
-    <div class="index-tools" :aria-hidden="!isOpen" :inert="!isOpen || undefined">
+    <button v-if="panel && error" class="outline-retry" type="button" :disabled="busy" @click="requestMore(true)">加载失败，重试</button>
+    <div v-if="!panel" class="index-tools" :aria-hidden="!isOpen" :inert="!isOpen || undefined">
       <span class="reading-position">{{ current?.floor }}楼 · {{ readingPage }}{{ totalPages ? '/' + totalPages : ''
         }}页</span>
       <button type="button" :aria-label="galleryActive ? '退出看图模式' : '看图模式'" :title="galleryActive ? '退出看图模式' : '看图模式'" :aria-pressed="Boolean(galleryActive)" :disabled="busy" @click="emit('gallery')">
         <span class="material-symbols-outlined">photo_library</span>
+      </button>
+      <button type="button" aria-label="看文模式" title="看文模式" :disabled="busy" @click="emit('reader')">
+        <span class="material-symbols-outlined">auto_stories</span>
       </button>
       <button type="button" aria-label="跳页" title="跳页" :disabled="busy" @click="emit('jump')">
         <span class="material-symbols-outlined">find_in_page</span>
@@ -327,4 +369,14 @@ defineExpose({ reveal });
     transition: none;
   }
 }
+
+.floor-index.panel { position: absolute; inset: 0; display: flex; flex-direction: column; transform: none; width: 100%; max-width: none; height: 100%; padding: 12px; box-sizing: border-box; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+.panel .floor-entries { --row-height: 44px; flex: 1; min-height: 0; height: auto; gap: 0; overflow-y: auto; scrollbar-width: thin; }
+.panel .floor-entry { height: 47px; border-radius: 8px; }
+.panel .floor-entry.current { background: rgba(var(--primary-color), .12); }
+.panel .floor-summary { display: flex; }
+.outline-heading { display: flex; align-items: center; gap: 12px; padding: 0 8px 12px; }
+.outline-heading > span { opacity: .55; font-size: 12px; }
+.outline-heading button { margin-left: auto; display: grid; place-items: center; padding: 5px; border: 0; box-shadow: none; background: transparent; color: inherit; cursor: pointer; }
+.outline-retry { flex-shrink: 0; margin-top: 8px; padding: 8px; border: 0; border-radius: 8px; box-shadow: none; color: inherit; background: rgba(var(--text-color), .06); cursor: pointer; }
 </style>

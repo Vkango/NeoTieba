@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, onMounted, onBeforeUnmount, onActivated, watch, inject, provide, type Ref } from 'vue';
+import { computed, nextTick, ref, onMounted, onBeforeUnmount, onActivated, watch, inject, provide, defineAsyncComponent, type Ref } from 'vue';
 import { useApiStore, useSettingsStore, useUserStore } from '@/stores';
 import Container from '@/components/common/Container.vue';
 import { getCurrentUser } from '@/services/user-manage';
@@ -24,6 +24,8 @@ import { findReadingFloor, floorPreview } from '@/utils/thread-index';
 import { useShareCard, threadUrl, shareAvatarUrl, formatCardDate } from '@/services/share-card/useShareCard';
 import { formatNumber } from '@/utils/helper';
 import type { ContentElement } from '@/types/common';
+
+const ThreadReader = defineAsyncComponent(() => import('@/components/thread/ThreadReader.vue'));
 
 interface GalleryImage {
   id: string;
@@ -107,6 +109,9 @@ const isThreadsLoading = ref<boolean>(true);
 const threadList: Ref<Post[]> = ref([]);
 const currentPage = ref<number>(1);
 const galleryOpen = ref(false);
+const readerOpen = ref(false);
+const readerRef = ref<InstanceType<typeof ThreadReader> | null>(null);
+const readerInitialPostId = ref('');
 const viewElement = ref<HTMLElement>();
 const viewWidth = ref(1000);
 const viewHeight = ref(600);
@@ -251,6 +256,7 @@ function restoreLayoutAnchor() {
   if (element) containerRef.value?.scrollToElement(element, layoutAnchor.offset);
 }
 async function toggleGallery() {
+  if (readerOpen.value) await toggleReader();
   captureLayoutAnchor();
   galleryOpen.value = !galleryOpen.value;
   if (galleryOpen.value) contextCollapsed.value = false;
@@ -367,6 +373,9 @@ const isJumpOpen = ref(false);
 const jumpInput = ref('1');
 const jumpError = ref('');
 const pageInputRef = ref<HTMLInputElement | null>(null);
+watch(isJumpOpen, async open => {
+  if (!open && readerOpen.value) { await nextTick(); readerRef.value?.focus(); }
+});
 const isFavourite = ref(false);
 const isFavouriteLoading = ref(false);
 const favouritePostId = ref('');
@@ -564,7 +573,10 @@ const jumpToPage = async () => {
     return;
   }
   jumpError.value = '';
-  if (await loadData(page, true)) isJumpOpen.value = false;
+  if (await loadData(page, true)) {
+    isJumpOpen.value = false;
+    if (readerOpen.value) await readerRef.value?.navigateToFloor(activePostId.value);
+  }
 };
 
 const toggleOnlyAuthor = async () => {
@@ -613,6 +625,7 @@ function setPostElement(id: string | number, element: unknown) {
 }
 
 function updateReadingPosition() {
+  if (readerOpen.value) return;
   const container = containerRef.value?.getScrollElement();
   if (!container || !visibleThreadList.value.length) return;
   const anchor = container.getBoundingClientRect().top + Math.min(100, container.clientHeight * 0.2);
@@ -639,6 +652,7 @@ function scheduleReadingPosition() {
 }
 
 const navigateToFloor = async (id: string, edge?: 'start' | 'end') => {
+  if (readerOpen.value) { readerInitialPostId.value = id; readerRef.value?.navigateToFloor(id); return; }
   if (isThreadsLoading.value || isFavouriteLoading.value || isFloorNavigating.value) return;
   isFloorNavigating.value = true;
   try {
@@ -663,6 +677,30 @@ const navigateToFloor = async (id: string, edge?: 'start' | 'end') => {
 };
 
 defineExpose({ navigateToFloor });
+
+async function toggleReader() {
+  if (readerOpen.value) {
+    const id = activePostId.value;
+    readerOpen.value = false;
+    await nextTick();
+    // Let Container finish its own nextTick + frame restoration before applying the reader anchor.
+    await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+    const element = postElements.get(id);
+    if (element) containerRef.value?.scrollToElement(element);
+    scheduleReadingPosition();
+    return;
+  }
+  updateReadingPosition();
+  readerInitialPostId.value = activePostId.value;
+  galleryOpen.value = false;
+  clearTimeout(layoutTimer);
+  layoutAnchor = undefined;
+  readerOpen.value = true;
+}
+
+function onReaderPosition(id: string) {
+  activePostId.value = id;
+}
 watch(() => [galleryAutoFollow.value, galleryOpen.value, selectedImage.value?.id, galleryOnlyAuthor.value, isLoading.value, isThreadsLoading.value], () => {
   const version = ++galleryFollowVersion;
   if (galleryAutoFollow.value && galleryOpen.value && !isLoading.value && !isThreadsLoading.value) {
@@ -746,6 +784,20 @@ const nextPage = async (): Promise<void> => {
   <div ref="viewElement" class="thread-view"
     :class="{ compact: props.compact || galleryOpen, 'gallery-open': galleryOpen, 'context-collapsed': contextCollapsed, resizing, stacked: isStacked }"
     :style="{ '--context-width': contextWidth + 'px', '--context-height': contextHeight + 'px' }" @keydown.esc="isJumpOpen = false">
+    <ThreadReader v-if="readerOpen" ref="readerRef" :posts="visibleThreadList" :title="threadTitle"
+      :initial-post-id="readerInitialPostId" :loading="isThreadsLoading"
+      :has-more="Boolean(returnData.data?.page?.has_more)" :error="loadError" :only-author="onlyThreadAuthor"
+      @position="onReaderPosition" @load-more="nextPage" @close="toggleReader" @open-user="onUserNameClicked"
+      @jump="openJump" @only-author="toggleOnlyAuthor">
+      <template #outline="{ close }">
+        <ThreadFloorIndex panel :entries="floorEntries" :current-id="activePostId" :reading-index="readingIndex"
+          :has-more="Boolean(returnData.data?.page?.has_more)" :error="loadError" @load-more="nextPage"
+          :reading-page="readingPage" :total-pages="totalPages" :busy="isThreadsLoading || isFloorNavigating"
+          :local="props.local" :only-author="onlyThreadAuthor" :favourite="isFavourite"
+          :favourite-here="isFavourite && favouritePostId === activePostId" @close="close"
+          @navigate="id => { navigateToFloor(id); close(); }" />
+      </template>
+    </ThreadReader>
     <section class="gallery-stage" aria-label="帖子图片" :aria-hidden="!galleryOpen" :inert="!galleryOpen || undefined">
       <ImageViewer v-if="galleryOpen && selectedImage" :image-src="offlineResolver(selectedImage.src)"
         :fallback-src="selectedImage.src"
@@ -814,7 +866,7 @@ const nextPage = async (): Promise<void> => {
           : (contextCollapsed ? 'chevron_left' : 'chevron_right') }}</span>
       </button>
     </div>
-    <section class="thread-context" :aria-hidden="galleryOpen && contextCollapsed"
+    <section v-if="!readerOpen" class="thread-context" :aria-hidden="galleryOpen && contextCollapsed"
       :inert="galleryOpen && contextCollapsed || undefined">
       <Container ref="containerRef" :tab-key="props.key_" :scroll-key="`thread-${props.key_}`" @yscroll="onScroll"
         @positionchange="scheduleReadingPosition">
@@ -876,13 +928,17 @@ const nextPage = async (): Promise<void> => {
         :busy="isThreadsLoading || isFavouriteLoading || isFloorNavigating" :local="props.local"
         :gallery-active="galleryOpen" :only-author="galleryOpen ? galleryOnlyAuthor : onlyThreadAuthor"
         :favourite="isFavourite" :favourite-here="isFavourite && favouritePostId === activePostId"
-        @gallery="toggleGallery" @navigate="navigateToFloor" @jump="openJump" @only-author="toggleOnlyAuthor"
+        @gallery="toggleGallery" @reader="toggleReader" @navigate="navigateToFloor" @jump="openJump" @only-author="toggleOnlyAuthor"
         @bookmark="toggleFavourite()" @remove-bookmark="toggleFavourite(true)" />
+
+      <ThreadSaveDialog v-model:open="isSaveOpen" :title="props.local ? '继续保存本帖归档' : '保存帖子'"
+        :archive-meta="archiveMeta" :busy="isSaving" @start="startSave" />
+    </section>
       <Transition name="fade">
         <div v-if="isJumpOpen" class="jump-overlay" @click.self="!isThreadsLoading && (isJumpOpen = false)">
           <section class="jump-card" role="dialog" aria-modal="true" :aria-labelledby="'jump-title-' + props.key_">
             <form @submit.prevent="jumpToPage">
-              <h3 :id="'jump-title-' + props.key_">跳转到指定页</h3>
+              <h3 :id="'jump-title-' + props.key_">{{ readerOpen ? '跳转到帖子页' : '跳转到指定页' }}</h3>
               <p>当前第 {{ readingPage }} 页<span v-if="totalPages">，共 {{ totalPages }} 页</span></p>
               <label :for="'thread-page-input-' + props.key_">页码</label>
               <input :id="'thread-page-input-' + props.key_" ref="pageInputRef" v-model="jumpInput" type="text"
@@ -898,9 +954,6 @@ const nextPage = async (): Promise<void> => {
           </section>
         </div>
       </Transition>
-      <ThreadSaveDialog v-model:open="isSaveOpen" :title="props.local ? '继续保存本帖归档' : '保存帖子'"
-        :archive-meta="archiveMeta" :busy="isSaving" @start="startSave" />
-    </section>
   </div>
 </template>
 

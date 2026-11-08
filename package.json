@@ -9,10 +9,13 @@
     "build": "vue-tsc --noEmit && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "test:settings": "node --test tests/*.test.mjs"
+    "test:settings": "node --test tests/*.test.mjs",
+    "test:reader": "node --test tests/thread-reader.test.mjs",
+    "test:reader:browser": "node tests/thread-reader.browser.mjs"
   },
   "dependencies": {
     "@audio/decode-amr": "^1.3.1",
+    "@chenglou/pretext": "1.0.0",
     "@fontsource/material-symbols-outlined": "^5.3.8",
     "@tauri-apps/api": "^2.11.0",
     "@tauri-apps/plugin-clipboard-manager": "^2.3.2",
